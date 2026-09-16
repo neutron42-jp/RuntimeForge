@@ -33,8 +33,9 @@ chosen per model automatically — no manual runtime switching.
   `.gguf` files; split shards are grouped; multimodal projectors are flagged and hidden by default.
 - **Per-model load settings** — context size, KV-cache quantization (`--cache-type-k/-v`),
   GPU/CPU offload (`-ngl`), CPU threads (`-t`), CPU affinity (`--cpu-range`), and a free-form
-  **extra llama.cpp arguments** field passed to `llama-server` verbatim. Saved per model and
-  editable from the UI.
+  **extra llama.cpp arguments** field passed to `llama-server` verbatim. Models are loaded from
+  the **Server** tab; leave a field blank to use the saved value, or type to override it. Saved
+  per model (`Save as model default`).
 - **OpenAI-compatible API** — `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`.
   Send `"model": "loaded"` to route to whatever model is currently loaded.
 - **Live inference logs** — `llama-server` stdout/stderr is streamed to the UI.
