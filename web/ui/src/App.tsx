@@ -156,7 +156,6 @@ export default function App() {
         )}
         {tab === 'server' && (
           <ServerTab
-            config={config}
             instances={instances}
             models={models}
             serverLogs={serverLogs}
@@ -913,12 +912,7 @@ const KV_CACHE_TYPES = ['f32', 'f16', 'bf16', 'q8_0', 'q5_1', 'q5_0', 'q4_1', 'q
 
 // --- Server / load ---------------------------------------------------
 
-interface ServerConfigShape {
-  server?: { host?: string; port?: number; internal_port_range?: number[] }
-}
-
 function ServerTab(props: {
-  config: unknown
   instances: Instance[]
   models: Model[]
   serverLogs: Record<string, string[]>
@@ -926,103 +920,15 @@ function ServerTab(props: {
   onRefresh: () => void
   notify: (msg: string, error?: boolean) => void
 }) {
-  const cfg = (props.config as ServerConfigShape) ?? {}
-  const [host, setHost] = useState('127.0.0.1')
-  const [port, setPort] = useState('1234')
-  const [lo, setLo] = useState('20000')
-  const [hi, setHi] = useState('20999')
-  const [dirty, setDirty] = useState(false)
-  const [selected, setSelected] = useState('')
   const [loadModelID, setLoadModelID] = useState('')
-  const [eff, setEff] = useState<ModelSettings>({})
-  const [saved, setSaved] = useState(false)
-  const [draft, setDraft] = useState<ParamDraft>(emptyDraft())
-  const onChange = (patch: Partial<ParamDraft>) => setDraft((d) => ({ ...d, ...patch }))
-
-  useEffect(() => {
-    if (!loadModelID) {
-      setEff({})
-      setSaved(false)
-      return
-    }
-    api
-      .modelSettings(loadModelID)
-      .then((r) => {
-        setEff(r.effective ?? {})
-        setSaved(r.has_saved)
-      })
-      .catch(() => undefined)
-    // Clear overrides so blank means "use the saved setting".
-    setDraft(emptyDraft())
-  }, [loadModelID])
-
-  useEffect(() => {
-    if (dirty) return
-    setHost(cfg.server?.host ?? '127.0.0.1')
-    setPort(String(cfg.server?.port ?? 1234))
-    const r = cfg.server?.internal_port_range ?? [20000, 20999]
-    setLo(String(r[0] ?? 20000))
-    setHi(String(r[1] ?? 20999))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.config])
-
-  const saveServer = async () => {
-    try {
-      await api.updateConfig({ server: { host, port: Number(port) } })
-      props.notify('API address saved — restart the daemon to apply')
-      setDirty(false)
-      props.onRefresh()
-    } catch (e) {
-      props.notify(String(e), true)
-    }
-  }
-
-  const savePorts = async () => {
-    try {
-      await api.updateConfig({ server: { internal_port_range: [Number(lo), Number(hi)] } })
-      props.notify('llama-server port range saved')
-      setDirty(false)
-      props.onRefresh()
-    } catch (e) {
-      props.notify(String(e), true)
-    }
-  }
+  const [selected, setSelected] = useState('')
 
   const load = async () => {
     if (!loadModelID) return
     try {
-      await api.loadModel(loadModelID, draftToParams(draft))
+      await api.loadModel(loadModelID, {})
       props.notify('Loading…')
       props.onRefresh()
-    } catch (e) {
-      props.notify(String(e), true)
-    }
-  }
-
-  const saveDefaults = async () => {
-    if (!loadModelID) return
-    try {
-      const current = await api.modelSettings(loadModelID)
-      const merged = mergeDraft(current.saved ?? {}, draft)
-      const res = await api.saveModelSettings(loadModelID, merged)
-      setSaved(true)
-      setEff(res.effective ?? {})
-      setDraft(emptyDraft())
-      props.notify('Saved as model default')
-    } catch (e) {
-      props.notify(String(e), true)
-    }
-  }
-
-  const clearDefaults = async () => {
-    if (!loadModelID) return
-    try {
-      await api.clearModelSettings(loadModelID)
-      setSaved(false)
-      const r = await api.modelSettings(loadModelID)
-      setEff(r.effective ?? {})
-      setDraft(emptyDraft())
-      props.notify('Cleared saved settings')
     } catch (e) {
       props.notify(String(e), true)
     }
@@ -1037,38 +943,8 @@ function ServerTab(props: {
       <h1>Server</h1>
       <div className="sub">
         Load a model and watch its llama-server logs. The OpenAI-compatible endpoint is{' '}
-        <span className="mono">{props.openaiURL}</span>.
-      </div>
-
-      <div className="cards">
-        <div className="card">
-          <h3>RuntimeForge API address</h3>
-          <div className="row">
-            <input value={host} onChange={(e) => { setHost(e.target.value); setDirty(true) }} placeholder="host" />
-            <input style={{ width: 90 }} value={port} onChange={(e) => { setPort(e.target.value); setDirty(true) }} placeholder="port" />
-            <button className="primary" onClick={saveServer} disabled={!dirty}>
-              Save
-            </button>
-          </div>
-          <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-            Takes effect after restarting the daemon.
-          </div>
-        </div>
-
-        <div className="card">
-          <h3>llama-server port range</h3>
-          <div className="row">
-            <input style={{ width: 90 }} value={lo} onChange={(e) => { setLo(e.target.value); setDirty(true) }} />
-            <span className="muted">–</span>
-            <input style={{ width: 90 }} value={hi} onChange={(e) => { setHi(e.target.value); setDirty(true) }} />
-            <button className="primary" onClick={savePorts} disabled={!dirty}>
-              Save
-            </button>
-          </div>
-          <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-            Internal ports used for newly loaded models.
-          </div>
-        </div>
+        <span className="mono">{props.openaiURL}</span>. Per-model settings are edited from the{' '}
+        <strong>Models</strong> tab (<span className="mono">Config</span>).
       </div>
 
       <h2>Load a model</h2>
@@ -1085,25 +961,7 @@ function ServerTab(props: {
           <button className="primary" onClick={load} disabled={!loadModelID}>
             Load
           </button>
-          <span className="spacer" />
-          <button onClick={saveDefaults} disabled={!loadModelID}>
-            Save as model default
-          </button>
-          {saved && (
-            <>
-              <span className="badge accent">saved</span>
-              <button className="danger" onClick={clearDefaults}>
-                Clear
-              </button>
-            </>
-          )}
         </div>
-
-        <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-          Leave a field blank to use the model's saved setting (or the global default); typing overrides it.
-        </div>
-
-        <ParamsFields draft={draft} eff={eff} onChange={onChange} />
       </div>
 
       <h2>Loaded models</h2>
