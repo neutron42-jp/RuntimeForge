@@ -1,0 +1,13 @@
+# Go build output
+/bin/
+
+# Front-end dependencies (web/dist IS committed so `go build` works out of the box)
+web/ui/node_modules/
+
+# Browser test artifacts
+.playwright-mcp/
+
+# Editor / OS
+*.swp
+*.tmp
+.DS_Store

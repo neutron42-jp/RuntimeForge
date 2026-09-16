@@ -1,0 +1,13 @@
+[Unit]
+Description=RuntimeForge - build and select llama.cpp runtimes
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/runtimeforge serve
+Restart=on-failure
+RestartSec=3
+Environment=RUNTIMEFORGE_HOME=%h/.runtimeforge
+
+[Install]
+WantedBy=default.target

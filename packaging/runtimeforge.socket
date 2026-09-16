@@ -1,0 +1,9 @@
+[Unit]
+Description=RuntimeForge socket (start the daemon on first request)
+
+[Socket]
+ListenStream=127.0.0.1:1234
+NoDelay=true
+
+[Install]
+WantedBy=sockets.target
