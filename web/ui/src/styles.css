@@ -152,3 +152,31 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .expand { background: var(--panel-2); }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; padding: 12px 0; }
 label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: min(760px, 94vw);
+  max-height: 88vh;
+  overflow: auto;
+  padding: 16px 18px 18px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.modal-head h3 { margin: 0; font-size: 15px; }

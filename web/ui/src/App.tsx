@@ -362,6 +362,7 @@ function ModelsTab(props: {
   const [rootDepth, setRootDepth] = useState('-1')
   const [filePath, setFilePath] = useState('')
   const [showProjectors, setShowProjectors] = useState(false)
+  const [loadFor, setLoadFor] = useState<Model | null>(null)
 
   useEffect(() => {
     api
@@ -587,7 +588,9 @@ function ModelsTab(props: {
                         Unload
                       </button>
                     ) : (
-                      <span className="muted">load from Server tab</span>
+                      <button disabled={m.projector} onClick={() => setLoadFor(m)}>
+                        Load…
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -596,7 +599,240 @@ function ModelsTab(props: {
           })}
         </tbody>
       </table>
+
+      {loadFor && (
+        <Modal title={`Load ${loadFor.name}`} onClose={() => setLoadFor(null)}>
+          <ModelSettingsForm
+            model={loadFor}
+            runtimes={props.runtimes}
+            onClose={() => setLoadFor(null)}
+            onRefresh={props.onRefresh}
+            notify={props.notify}
+          />
+        </Modal>
+      )}
     </>
+  )
+}
+
+// --- Modal + model settings form ------------------------------------
+
+function Modal(props: { title: string; onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') props.onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [props.onClose])
+  return (
+    <div className="modal-backdrop" onClick={props.onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h3>{props.title}</h3>
+          <button onClick={props.onClose}>Close</button>
+        </div>
+        {props.children}
+      </div>
+    </div>
+  )
+}
+
+function ModelSettingsForm(props: {
+  model: Model
+  runtimes: Manifest[]
+  onClose: () => void
+  onRefresh: () => void
+  notify: (msg: string, error?: boolean) => void
+}) {
+  const [eff, setEff] = useState<ModelSettings>({})
+  const [saved, setSaved] = useState(false)
+  const [runtimeID, setRuntimeID] = useState('')
+  const [ctx, setCtx] = useState('')
+  const [kvK, setKvK] = useState('')
+  const [kvV, setKvV] = useState('')
+  const [gpuLayers, setGpuLayers] = useState('')
+  const [threads, setThreads] = useState('')
+  const [cpuRange, setCpuRange] = useState('')
+  const [extra, setExtra] = useState('')
+  const [advOpen, setAdvOpen] = useState(false)
+
+  useEffect(() => {
+    api
+      .modelSettings(props.model.id)
+      .then((r) => {
+        setEff(r.effective ?? {})
+        setSaved(r.has_saved)
+      })
+      .catch(() => undefined)
+  }, [props.model.id])
+
+  const load = async () => {
+    try {
+      await api.loadModel(props.model.id, {
+        runtime_id: runtimeID || undefined,
+        context_size: ctx ? Number(ctx) : undefined,
+        cache_type_k: kvK || undefined,
+        cache_type_v: kvV || undefined,
+        gpu_layers: gpuLayers || undefined,
+        threads: threads ? Number(threads) : undefined,
+        cpu_range: cpuRange || undefined,
+        extra_args: extra.trim() ? splitArgs(extra) : undefined,
+      })
+      props.notify(`Loading ${props.model.name}…`)
+      props.onClose()
+      props.onRefresh()
+    } catch (e) {
+      props.notify(String(e), true)
+    }
+  }
+
+  const save = async () => {
+    try {
+      const current = await api.modelSettings(props.model.id)
+      const merged: ModelSettings = { ...current.saved }
+      if (ctx) merged.context_size = Number(ctx)
+      if (kvK) merged.cache_type_k = kvK
+      if (kvV) merged.cache_type_v = kvV
+      if (gpuLayers) merged.gpu_layers = gpuLayers
+      if (threads) merged.threads = Number(threads)
+      if (cpuRange) merged.cpu_range = cpuRange
+      if (extra.trim()) merged.extra_args = splitArgs(extra)
+      const res = await api.saveModelSettings(props.model.id, merged)
+      setSaved(true)
+      setEff(res.effective ?? {})
+      props.notify('Saved as model default')
+    } catch (e) {
+      props.notify(String(e), true)
+    }
+  }
+
+  const clear = async () => {
+    try {
+      await api.clearModelSettings(props.model.id)
+      setSaved(false)
+      const r = await api.modelSettings(props.model.id)
+      setEff(r.effective ?? {})
+      props.notify('Cleared saved settings')
+    } catch (e) {
+      props.notify(String(e), true)
+    }
+  }
+
+  return (
+    <div>
+      <div className="form-grid">
+        <div>
+          <label>Runtime</label>
+          <select value={runtimeID} onChange={(e) => setRuntimeID(e.target.value)}>
+            <option value="">auto (architecture + backend)</option>
+            {props.runtimes.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.id}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label>Context size (-c)</label>
+          <input
+            value={ctx}
+            onChange={(e) => setCtx(e.target.value)}
+            placeholder={eff.context_size ? `saved: ${eff.context_size}` : 'default'}
+          />
+        </div>
+      </div>
+
+      <div className="row" style={{ marginTop: 4 }}>
+        <button onClick={() => setAdvOpen(!advOpen)}>{advOpen ? 'Hide' : 'Advanced'} settings</button>
+        <span className="muted" style={{ fontSize: 12 }}>
+          Blank = use the saved setting (or global default); typing overrides it.
+        </span>
+      </div>
+
+      {advOpen && (
+        <div className="form-grid">
+          <div>
+            <label>KV cache K (--cache-type-k)</label>
+            <select value={kvK} onChange={(e) => setKvK(e.target.value)}>
+              <option value="">{eff.cache_type_k ? `saved: ${eff.cache_type_k}` : 'default'}</option>
+              {KV_CACHE_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label>KV cache V (--cache-type-v)</label>
+            <select value={kvV} onChange={(e) => setKvV(e.target.value)}>
+              <option value="">{eff.cache_type_v ? `saved: ${eff.cache_type_v}` : 'default'}</option>
+              {KV_CACHE_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label>GPU layers (-ngl)</label>
+            <input
+              value={gpuLayers}
+              onChange={(e) => setGpuLayers(e.target.value)}
+              placeholder={eff.gpu_layers ? `saved: ${eff.gpu_layers}` : 'e.g. 99 or 0'}
+            />
+          </div>
+          <div>
+            <label>CPU threads (-t)</label>
+            <input
+              value={threads}
+              onChange={(e) => setThreads(e.target.value)}
+              placeholder={eff.threads ? `saved: ${eff.threads}` : 'default'}
+            />
+          </div>
+          <div>
+            <label>CPU range (--cpu-range)</label>
+            <input
+              value={cpuRange}
+              onChange={(e) => setCpuRange(e.target.value)}
+              placeholder={eff.cpu_range ? `saved: ${eff.cpu_range}` : 'e.g. 0-7'}
+            />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label>Extra llama.cpp arguments (passed to llama-server verbatim)</label>
+            <textarea
+              className="mono"
+              style={{ width: '100%', minHeight: 56 }}
+              value={extra}
+              onChange={(e) => setExtra(e.target.value)}
+              placeholder={
+                eff.extra_args && eff.extra_args.length
+                  ? `saved: ${eff.extra_args.join(' ')}`
+                  : '--flash-attn on --no-webui'
+              }
+              spellCheck={false}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="row" style={{ marginTop: 14 }}>
+        <button className="primary" onClick={load}>
+          Load {props.model.name}
+        </button>
+        <button onClick={save}>Save as model default</button>
+        {saved && (
+          <>
+            <span className="badge accent">saved</span>
+            <button className="danger" onClick={clear}>
+              Clear
+            </button>
+          </>
+        )}
+        <span className="spacer" />
+        <button onClick={props.onClose}>Cancel</button>
+      </div>
+    </div>
   )
 }
 
@@ -632,40 +868,6 @@ function ServerTab(props: {
   const [hi, setHi] = useState('20999')
   const [dirty, setDirty] = useState(false)
   const [selected, setSelected] = useState('')
-  const [loadModelID, setLoadModelID] = useState('')
-  const [eff, setEff] = useState<ModelSettings>({})
-  const [saved, setSaved] = useState(false)
-  const [ctx, setCtx] = useState('')
-  const [kvK, setKvK] = useState('')
-  const [kvV, setKvV] = useState('')
-  const [gpuLayers, setGpuLayers] = useState('')
-  const [threads, setThreads] = useState('')
-  const [cpuRange, setCpuRange] = useState('')
-  const [extra, setExtra] = useState('')
-  const [advOpen, setAdvOpen] = useState(false)
-
-  useEffect(() => {
-    if (!loadModelID) {
-      setEff({})
-      setSaved(false)
-      return
-    }
-    api
-      .modelSettings(loadModelID)
-      .then((r) => {
-        setEff(r.effective ?? {})
-        setSaved(r.has_saved)
-      })
-      .catch(() => undefined)
-    // Clear overrides so blank means "use the saved setting".
-    setCtx('')
-    setKvK('')
-    setKvV('')
-    setGpuLayers('')
-    setThreads('')
-    setCpuRange('')
-    setExtra('')
-  }, [loadModelID])
 
   useEffect(() => {
     if (dirty) return
@@ -699,60 +901,6 @@ function ServerTab(props: {
     }
   }
 
-  const load = async () => {
-    if (!loadModelID) return
-    try {
-      await api.loadModel(loadModelID, {
-        context_size: ctx ? Number(ctx) : undefined,
-        cache_type_k: kvK || undefined,
-        cache_type_v: kvV || undefined,
-        gpu_layers: gpuLayers || undefined,
-        threads: threads ? Number(threads) : undefined,
-        cpu_range: cpuRange || undefined,
-        extra_args: extra.trim() ? splitArgs(extra) : undefined,
-      })
-      props.notify('Loading…')
-      props.onRefresh()
-    } catch (e) {
-      props.notify(String(e), true)
-    }
-  }
-
-  const saveDefaults = async () => {
-    if (!loadModelID) return
-    try {
-      const current = await api.modelSettings(loadModelID)
-      const merged: ModelSettings = { ...current.saved }
-      if (ctx) merged.context_size = Number(ctx)
-      if (kvK) merged.cache_type_k = kvK
-      if (kvV) merged.cache_type_v = kvV
-      if (gpuLayers) merged.gpu_layers = gpuLayers
-      if (threads) merged.threads = Number(threads)
-      if (cpuRange) merged.cpu_range = cpuRange
-      if (extra.trim()) merged.extra_args = splitArgs(extra)
-      const res = await api.saveModelSettings(loadModelID, merged)
-      setSaved(true)
-      setEff(res.effective ?? {})
-      props.notify('Saved as model default')
-    } catch (e) {
-      props.notify(String(e), true)
-    }
-  }
-
-  const clearDefaults = async () => {
-    if (!loadModelID) return
-    try {
-      await api.clearModelSettings(loadModelID)
-      setSaved(false)
-      const r = await api.modelSettings(loadModelID)
-      setEff(r.effective ?? {})
-      props.notify('Cleared saved settings')
-    } catch (e) {
-      props.notify(String(e), true)
-    }
-  }
-
-  const chatModels = (props.models ?? []).filter((m) => !m.projector)
   const selectedInst = props.instances.find((i) => i.id === selected) ?? props.instances[0]
   const logLines = selectedInst ? props.serverLogs[selectedInst.id] ?? selectedInst.tail ?? [] : []
 
@@ -760,7 +908,8 @@ function ServerTab(props: {
     <>
       <h1>Server</h1>
       <div className="sub">
-        Load a model and watch its llama-server logs. The OpenAI-compatible endpoint is{' '}
+        Load models from the <strong>Models</strong> tab (<span className="mono">Load…</span>) and watch their
+        llama-server logs here. The OpenAI-compatible endpoint is{' '}
         <span className="mono">{props.openaiURL}</span>.
       </div>
 
@@ -792,122 +941,6 @@ function ServerTab(props: {
           <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
             Internal ports used for newly loaded models.
           </div>
-        </div>
-      </div>
-
-      <h2>Load a model</h2>
-      <div className="card">
-        <div className="row">
-          <select value={loadModelID} onChange={(e) => setLoadModelID(e.target.value)} style={{ minWidth: 320 }}>
-            <option value="">select a model…</option>
-            {chatModels.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name} ({m.architecture})
-              </option>
-            ))}
-          </select>
-          <button className="primary" onClick={load} disabled={!loadModelID}>
-            Load
-          </button>
-          <span className="spacer" />
-          <button onClick={() => setAdvOpen(!advOpen)} disabled={!loadModelID}>
-            {advOpen ? 'Hide' : 'Advanced'} settings
-          </button>
-        </div>
-
-        <div className="form-grid" style={{ marginTop: 10 }}>
-          <div>
-            <label>Context size (-c)</label>
-            <input
-              value={ctx}
-              onChange={(e) => setCtx(e.target.value)}
-              placeholder={eff.context_size ? `saved: ${eff.context_size}` : 'default'}
-            />
-          </div>
-        </div>
-
-        {advOpen && (
-          <div className="form-grid">
-            <div>
-              <label>KV cache K (--cache-type-k)</label>
-              <select value={kvK} onChange={(e) => setKvK(e.target.value)}>
-                <option value="">{eff.cache_type_k ? `saved: ${eff.cache_type_k}` : 'default'}</option>
-                {KV_CACHE_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label>KV cache V (--cache-type-v)</label>
-              <select value={kvV} onChange={(e) => setKvV(e.target.value)}>
-                <option value="">{eff.cache_type_v ? `saved: ${eff.cache_type_v}` : 'default'}</option>
-                {KV_CACHE_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label>GPU layers (-ngl)</label>
-              <input
-                value={gpuLayers}
-                onChange={(e) => setGpuLayers(e.target.value)}
-                placeholder={eff.gpu_layers ? `saved: ${eff.gpu_layers}` : 'default'}
-              />
-            </div>
-            <div>
-              <label>CPU threads (-t)</label>
-              <input
-                value={threads}
-                onChange={(e) => setThreads(e.target.value)}
-                placeholder={eff.threads ? `saved: ${eff.threads}` : 'default'}
-              />
-            </div>
-            <div>
-              <label>CPU range (--cpu-range)</label>
-              <input
-                value={cpuRange}
-                onChange={(e) => setCpuRange(e.target.value)}
-                placeholder={eff.cpu_range ? `saved: ${eff.cpu_range}` : 'e.g. 0-7'}
-              />
-            </div>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label>Extra llama.cpp arguments</label>
-              <textarea
-                className="mono"
-                style={{ width: '100%', minHeight: 56 }}
-                value={extra}
-                onChange={(e) => setExtra(e.target.value)}
-                placeholder={
-                  eff.extra_args && eff.extra_args.length
-                    ? `saved: ${eff.extra_args.join(' ')}`
-                    : '--flash-attn on --no-webui'
-                }
-                spellCheck={false}
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-          Leave a field blank to use the model's saved setting (or the global default); typing overrides it.
-        </div>
-
-        <div className="row" style={{ marginTop: 10 }}>
-          <button onClick={saveDefaults} disabled={!loadModelID}>
-            Save as model default
-          </button>
-          {saved && (
-            <>
-              <span className="badge accent">saved</span>
-              <button className="danger" onClick={clearDefaults}>
-                Clear
-              </button>
-            </>
-          )}
         </div>
       </div>
 
