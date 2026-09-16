@@ -121,6 +121,12 @@ All state lives under `~/.runtimeforge/` (override with `RUNTIMEFORGE_HOME`):
 
 See [SPEC.md](SPEC.md) for the full design.
 
+## License
+
+Released into the public domain under the [Unlicense](LICENSE) — use it however you like.
+Bundled third-party components (React, BurntSushi/toml) keep their own licenses; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Status
 
-Early development, Linux-only. No license has been chosen yet — add one before redistributing.
+Early development, Linux-only.
