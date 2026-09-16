@@ -35,14 +35,22 @@ const (
 )
 
 // Params are llama-server launch parameters, all user overridable.
+// The set mirrors LM Studio's per-model load settings.
 type Params struct {
-	ContextSize  int      `json:"context_size,omitempty"`
-	KVCacheTypeK string   `json:"cache_type_k,omitempty"`
-	KVCacheTypeV string   `json:"cache_type_v,omitempty"`
-	GPULayers    string   `json:"gpu_layers,omitempty"`
-	Threads      int      `json:"threads,omitempty"`
-	CPURange     string   `json:"cpu_range,omitempty"`
-	ExtraArgs    []string `json:"extra_args,omitempty"`
+	ContextSize    int      `json:"context_size,omitempty"`
+	GPULayers      string   `json:"gpu_layers,omitempty"`
+	Threads        int      `json:"threads,omitempty"`
+	CPURange       string   `json:"cpu_range,omitempty"`
+	EvalBatchSize  int      `json:"eval_batch_size,omitempty"`
+	FlashAttn      string   `json:"flash_attn,omitempty"`   // on|off|auto
+	KVCacheTypeK   string   `json:"cache_type_k,omitempty"` // f16|q8_0|q4_0|...
+	KVCacheTypeV   string   `json:"cache_type_v,omitempty"`
+	KVCacheOffload string   `json:"kv_cache_offload,omitempty"` // on|off (GPU offload of KV cache)
+	LoadMode       string   `json:"load_mode,omitempty"`        // auto|none|mmap|mlock|mmap+mlock
+	Seed           int      `json:"seed,omitempty"`
+	RopeFreqBase   string   `json:"rope_freq_base,omitempty"`
+	RopeFreqScale  string   `json:"rope_freq_scale,omitempty"`
+	ExtraArgs      []string `json:"extra_args,omitempty"`
 }
 
 // LoadSpec fully describes a load request.
@@ -465,6 +473,9 @@ func BuildArgs(spec LoadSpec, port int) []string {
 	if spec.Params.ContextSize > 0 {
 		args = append(args, "-c", strconv.Itoa(spec.Params.ContextSize))
 	}
+	if spec.Params.FlashAttn != "" {
+		args = append(args, "--flash-attn", spec.Params.FlashAttn)
+	}
 	if spec.Params.KVCacheTypeK != "" {
 		args = append(args, "--cache-type-k", spec.Params.KVCacheTypeK)
 	}
@@ -479,6 +490,24 @@ func BuildArgs(spec LoadSpec, port int) []string {
 	}
 	if spec.Params.CPURange != "" {
 		args = append(args, "--cpu-range", spec.Params.CPURange)
+	}
+	if spec.Params.EvalBatchSize > 0 {
+		args = append(args, "-b", strconv.Itoa(spec.Params.EvalBatchSize))
+	}
+	if strings.EqualFold(spec.Params.KVCacheOffload, "off") {
+		args = append(args, "--no-kv-offload")
+	}
+	if spec.Params.LoadMode != "" {
+		args = append(args, "--load-mode", spec.Params.LoadMode)
+	}
+	if spec.Params.Seed != 0 {
+		args = append(args, "--seed", strconv.Itoa(spec.Params.Seed))
+	}
+	if spec.Params.RopeFreqBase != "" {
+		args = append(args, "--rope-freq-base", spec.Params.RopeFreqBase)
+	}
+	if spec.Params.RopeFreqScale != "" {
+		args = append(args, "--rope-freq-scale", spec.Params.RopeFreqScale)
 	}
 	args = append(args, spec.Params.ExtraArgs...)
 	return args

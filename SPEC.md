@@ -168,13 +168,20 @@ cxx = ""
 cmake_defines = {}
 
 [load]
-# すべてのモデルに適用される llama-server 既定引数
+# すべてのモデルに適用される llama-server 既定引数（LM Studio のモデル別設定相当）
 extra_args = []
 gpu_layers = ""          # -ngl (GPU/CPU オフロード)
 threads = 0              # -t (CPU コア数)
 context_size = 0         # -c
+eval_batch_size = 0      # -b (評価バッチサイズ)
+flash_attn = ""          # --flash-attn ("" = auto / "on" / "off" / "auto")
 cache_type_k = ""        # --cache-type-k (KVキャッシュ量子化)
 cache_type_v = ""        # --cache-type-v
+kv_cache_offload = ""    # "" = GPU にオフロード / "off" で --no-kv-offload
+load_mode = ""           # --load-mode (auto/none/mmap/mlock/mmap+mlock)
+seed = 0                 # --seed
+rope_freq_base = ""      # --rope-freq-base
+rope_freq_scale = ""     # --rope-freq-scale
 cpu_range = ""           # --cpu-range (例 "0-7")
 
 [models]
@@ -274,11 +281,14 @@ nvcc  = ""
   `general.size_label`。量子化名はファイル名から抽出（`file_type` はバージョン間で
   ずれるため）
 - 明示ロードのみ（JIT/自動ロードなし）。UI または API からロード/アンロード
-- **モデル個別のロード設定**を保存可能（`state/model_settings.json`、モデルID単位）:
-  コンテキスト長 `-c`、KVキャッシュ量子化 `--cache-type-k/-v`（f16/q8_0/q4_0 等）、
-  GPU/CPUオフロード `-ngl`、CPUコア数 `-t`、CPUアフィニティ `--cpu-range`、
-  **任意のllama.cpp引数をそのまま追記**（`extra_args`）。グローバル既定（`[load]`）に
-  モデル個別設定を重ね、リクエスト時の上書きが最優先
+- **モデル個別のロード設定**を保存可能（`state/model_settings.json`、モデルID単位）。
+  LM Studio のモデル別ロード設定に相当する項目を GUI（Models タブの `Config` モーダル）で編集:
+  Context `-c`、GPUオフロード `-ngl`、CPUスレッド `-t`、評価バッチ `-b`、Flash Attention
+  `--flash-attn`、KVキャッシュ量子化 `--cache-type-k/-v`、**KVキャッシュのGPUオフロード**
+  (`--no-kv-offload`)、**ロードモード** `--load-mode`（auto/none/mmap/mlock/mmap+mlock）、
+  Seed `--seed`、RoPE `--rope-freq-base/-scale`、CPUアフィニティ `--cpu-range`、
+  および**任意のllama.cpp引数をそのまま追記**（`extra_args`）。グローバル既定（`[load]`）に
+  モデル個別設定を重ね、ロード時の上書きが最優先。空欄の項目は保存値/既定を使用
 
 ## 13. モデルスーパーバイザ
 

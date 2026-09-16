@@ -124,6 +124,27 @@ func Merge(base, over supervisor.Params) supervisor.Params {
 	if over.CPURange != "" {
 		out.CPURange = over.CPURange
 	}
+	if over.EvalBatchSize != 0 {
+		out.EvalBatchSize = over.EvalBatchSize
+	}
+	if over.FlashAttn != "" {
+		out.FlashAttn = over.FlashAttn
+	}
+	if over.KVCacheOffload != "" {
+		out.KVCacheOffload = over.KVCacheOffload
+	}
+	if over.LoadMode != "" {
+		out.LoadMode = over.LoadMode
+	}
+	if over.Seed != 0 {
+		out.Seed = over.Seed
+	}
+	if over.RopeFreqBase != "" {
+		out.RopeFreqBase = over.RopeFreqBase
+	}
+	if over.RopeFreqScale != "" {
+		out.RopeFreqScale = over.RopeFreqScale
+	}
 	if len(over.ExtraArgs) > 0 {
 		out.ExtraArgs = append(append([]string(nil), base.ExtraArgs...), over.ExtraArgs...)
 	}

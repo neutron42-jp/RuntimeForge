@@ -54,11 +54,18 @@ export interface ModelSources {
 
 export interface ModelSettings {
   context_size?: number
-  cache_type_k?: string
-  cache_type_v?: string
   gpu_layers?: string
   threads?: number
   cpu_range?: string
+  eval_batch_size?: number
+  flash_attn?: string
+  cache_type_k?: string
+  cache_type_v?: string
+  kv_cache_offload?: string
+  load_mode?: string
+  seed?: number
+  rope_freq_base?: string
+  rope_freq_scale?: string
   extra_args?: string[]
 }
 

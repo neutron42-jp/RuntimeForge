@@ -368,13 +368,20 @@ func modelTargets(cfg config.Config) ([]models.Dir, []string) {
 func (s *Server) loadParams(modelID string) supervisor.Params {
 	cfg := s.cfg()
 	params := supervisor.Params{
-		ContextSize:  cfg.Load.ContextSize,
-		KVCacheTypeK: cfg.Load.KVCacheTypeK,
-		KVCacheTypeV: cfg.Load.KVCacheTypeV,
-		GPULayers:    cfg.Load.GPULayers,
-		Threads:      cfg.Load.Threads,
-		CPURange:     cfg.Load.CPURange,
-		ExtraArgs:    append([]string(nil), cfg.Load.ExtraArgs...),
+		ContextSize:    cfg.Load.ContextSize,
+		EvalBatchSize:  cfg.Load.EvalBatchSize,
+		FlashAttn:      cfg.Load.FlashAttn,
+		KVCacheTypeK:   cfg.Load.KVCacheTypeK,
+		KVCacheTypeV:   cfg.Load.KVCacheTypeV,
+		KVCacheOffload: cfg.Load.KVCacheOffload,
+		LoadMode:       cfg.Load.LoadMode,
+		Seed:           cfg.Load.Seed,
+		RopeFreqBase:   cfg.Load.RopeFreqBase,
+		RopeFreqScale:  cfg.Load.RopeFreqScale,
+		GPULayers:      cfg.Load.GPULayers,
+		Threads:        cfg.Load.Threads,
+		CPURange:       cfg.Load.CPURange,
+		ExtraArgs:      append([]string(nil), cfg.Load.ExtraArgs...),
 	}
 	if s.deps.Settings != nil {
 		params = loadsettings.Merge(params, s.deps.Settings.Get(modelID))
@@ -443,14 +450,21 @@ func (s *Server) handleModelLoad(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		RuntimeID    string   `json:"runtime_id"`
-		ContextSize  int      `json:"context_size"`
-		KVCacheTypeK string   `json:"cache_type_k"`
-		KVCacheTypeV string   `json:"cache_type_v"`
-		GPULayers    string   `json:"gpu_layers"`
-		Threads      int      `json:"threads"`
-		CPURange     string   `json:"cpu_range"`
-		ExtraArgs    []string `json:"extra_args"`
+		RuntimeID      string   `json:"runtime_id"`
+		ContextSize    int      `json:"context_size"`
+		EvalBatchSize  int      `json:"eval_batch_size"`
+		FlashAttn      string   `json:"flash_attn"`
+		KVCacheTypeK   string   `json:"cache_type_k"`
+		KVCacheTypeV   string   `json:"cache_type_v"`
+		KVCacheOffload string   `json:"kv_cache_offload"`
+		LoadMode       string   `json:"load_mode"`
+		Seed           int      `json:"seed"`
+		RopeFreqBase   string   `json:"rope_freq_base"`
+		RopeFreqScale  string   `json:"rope_freq_scale"`
+		GPULayers      string   `json:"gpu_layers"`
+		Threads        int      `json:"threads"`
+		CPURange       string   `json:"cpu_range"`
+		ExtraArgs      []string `json:"extra_args"`
 	}
 	if err := ReadJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -473,11 +487,32 @@ func (s *Server) handleModelLoad(w http.ResponseWriter, r *http.Request) {
 	if body.ContextSize != 0 {
 		params.ContextSize = body.ContextSize
 	}
+	if body.EvalBatchSize != 0 {
+		params.EvalBatchSize = body.EvalBatchSize
+	}
+	if body.FlashAttn != "" {
+		params.FlashAttn = body.FlashAttn
+	}
 	if body.KVCacheTypeK != "" {
 		params.KVCacheTypeK = body.KVCacheTypeK
 	}
 	if body.KVCacheTypeV != "" {
 		params.KVCacheTypeV = body.KVCacheTypeV
+	}
+	if body.KVCacheOffload != "" {
+		params.KVCacheOffload = body.KVCacheOffload
+	}
+	if body.LoadMode != "" {
+		params.LoadMode = body.LoadMode
+	}
+	if body.Seed != 0 {
+		params.Seed = body.Seed
+	}
+	if body.RopeFreqBase != "" {
+		params.RopeFreqBase = body.RopeFreqBase
+	}
+	if body.RopeFreqScale != "" {
+		params.RopeFreqScale = body.RopeFreqScale
 	}
 	if body.GPULayers != "" {
 		params.GPULayers = body.GPULayers

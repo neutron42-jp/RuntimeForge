@@ -636,6 +636,197 @@ function Modal(props: { title: string; onClose: () => void; children: ReactNode 
   )
 }
 
+// --- Load parameter fields (shared between Config modal and Server tab)
+
+interface ParamDraft {
+  context_size: string
+  gpu_layers: string
+  threads: string
+  cpu_range: string
+  eval_batch_size: string
+  flash_attn: string
+  cache_type_k: string
+  cache_type_v: string
+  kv_cache_offload: string
+  load_mode: string
+  seed: string
+  rope_freq_base: string
+  rope_freq_scale: string
+  extra_args: string
+}
+
+function emptyDraft(): ParamDraft {
+  return {
+    context_size: '',
+    gpu_layers: '',
+    threads: '',
+    cpu_range: '',
+    eval_batch_size: '',
+    flash_attn: '',
+    cache_type_k: '',
+    cache_type_v: '',
+    kv_cache_offload: '',
+    load_mode: '',
+    seed: '',
+    rope_freq_base: '',
+    rope_freq_scale: '',
+    extra_args: '',
+  }
+}
+
+function draftToParams(d: ParamDraft): ModelSettings {
+  return {
+    context_size: d.context_size ? Number(d.context_size) : 0,
+    gpu_layers: d.gpu_layers,
+    threads: d.threads ? Number(d.threads) : 0,
+    cpu_range: d.cpu_range,
+    eval_batch_size: d.eval_batch_size ? Number(d.eval_batch_size) : 0,
+    flash_attn: d.flash_attn,
+    cache_type_k: d.cache_type_k,
+    cache_type_v: d.cache_type_v,
+    kv_cache_offload: d.kv_cache_offload,
+    load_mode: d.load_mode,
+    seed: d.seed ? Number(d.seed) : 0,
+    rope_freq_base: d.rope_freq_base,
+    rope_freq_scale: d.rope_freq_scale,
+    extra_args: d.extra_args.trim() ? splitArgs(d.extra_args) : [],
+  }
+}
+
+// mergeDraft folds only the typed (non-blank) draft fields into an
+// existing saved settings object.
+function mergeDraft(saved: ModelSettings, d: ParamDraft): ModelSettings {
+  const out: Record<string, unknown> = { ...saved }
+  const p = draftToParams(d) as unknown as Record<string, unknown>
+  for (const [k, v] of Object.entries(p)) {
+    if (Array.isArray(v)) {
+      if (v.length > 0) out[k] = v
+    } else if (v !== '' && v !== 0) {
+      out[k] = v
+    }
+  }
+  return out as ModelSettings
+}
+
+const ph = (v: string | number | undefined, fallback = 'default') =>
+  v === undefined || v === '' || v === 0 ? fallback : `saved: ${v}`
+
+function ParamsFields(props: {
+  draft: ParamDraft
+  eff: ModelSettings
+  onChange: (patch: Partial<ParamDraft>) => void
+}) {
+  const { draft, eff, onChange } = props
+  const tri = (v: string | undefined) => (v ? `saved: ${v}` : 'default')
+  return (
+    <>
+      <div className="section-title">Model</div>
+      <div className="form-grid">
+        <div>
+          <label>Context size (-c)</label>
+          <input value={draft.context_size} onChange={(e) => onChange({ context_size: e.target.value })} placeholder={ph(eff.context_size)} />
+        </div>
+        <div>
+          <label>GPU offload (-ngl)</label>
+          <input value={draft.gpu_layers} onChange={(e) => onChange({ gpu_layers: e.target.value })} placeholder={ph(eff.gpu_layers, 'max / 0 / N')} />
+        </div>
+        <div>
+          <label>CPU threads (-t)</label>
+          <input value={draft.threads} onChange={(e) => onChange({ threads: e.target.value })} placeholder={ph(eff.threads)} />
+        </div>
+        <div>
+          <label>Eval batch size (-b)</label>
+          <input value={draft.eval_batch_size} onChange={(e) => onChange({ eval_batch_size: e.target.value })} placeholder={ph(eff.eval_batch_size)} />
+        </div>
+      </div>
+
+      <div className="section-title">Attention &amp; KV cache</div>
+      <div className="form-grid">
+        <div>
+          <label>Flash attention (--flash-attn)</label>
+          <select value={draft.flash_attn} onChange={(e) => onChange({ flash_attn: e.target.value })}>
+            <option value="">{tri(eff.flash_attn)}</option>
+            <option value="on">on</option>
+            <option value="off">off</option>
+            <option value="auto">auto</option>
+          </select>
+        </div>
+        <div>
+          <label>KV cache K (--cache-type-k)</label>
+          <select value={draft.cache_type_k} onChange={(e) => onChange({ cache_type_k: e.target.value })}>
+            <option value="">{tri(eff.cache_type_k)}</option>
+            {KV_CACHE_TYPES.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label>KV cache V (--cache-type-v)</label>
+          <select value={draft.cache_type_v} onChange={(e) => onChange({ cache_type_v: e.target.value })}>
+            <option value="">{tri(eff.cache_type_v)}</option>
+            {KV_CACHE_TYPES.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label>Offload KV cache to GPU</label>
+          <select value={draft.kv_cache_offload} onChange={(e) => onChange({ kv_cache_offload: e.target.value })}>
+            <option value="">{tri(eff.kv_cache_offload)}</option>
+            <option value="on">on</option>
+            <option value="off">off</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="section-title">Memory &amp; misc</div>
+      <div className="form-grid">
+        <div>
+          <label>Model load mode (--load-mode)</label>
+          <select value={draft.load_mode} onChange={(e) => onChange({ load_mode: e.target.value })}>
+            <option value="">{tri(eff.load_mode)}</option>
+            <option value="auto">auto</option>
+            <option value="mmap">mmap</option>
+            <option value="none">none</option>
+            <option value="mlock">mlock</option>
+            <option value="mmap+mlock">mmap+mlock</option>
+          </select>
+        </div>
+        <div>
+          <label>Seed (--seed)</label>
+          <input value={draft.seed} onChange={(e) => onChange({ seed: e.target.value })} placeholder={ph(eff.seed)} />
+        </div>
+        <div>
+          <label>CPU range (--cpu-range)</label>
+          <input value={draft.cpu_range} onChange={(e) => onChange({ cpu_range: e.target.value })} placeholder={ph(eff.cpu_range, 'e.g. 0-7')} />
+        </div>
+        <div>
+          <label>RoPE freq base (--rope-freq-base)</label>
+          <input value={draft.rope_freq_base} onChange={(e) => onChange({ rope_freq_base: e.target.value })} placeholder={ph(eff.rope_freq_base)} />
+        </div>
+        <div>
+          <label>RoPE freq scale (--rope-freq-scale)</label>
+          <input value={draft.rope_freq_scale} onChange={(e) => onChange({ rope_freq_scale: e.target.value })} placeholder={ph(eff.rope_freq_scale)} />
+        </div>
+      </div>
+
+      <div className="section-title">Extra llama.cpp arguments</div>
+      <div className="form-grid">
+        <div style={{ gridColumn: '1 / -1' }}>
+          <textarea
+            className="mono"
+            style={{ width: '100%', minHeight: 56 }}
+            value={draft.extra_args}
+            onChange={(e) => onChange({ extra_args: e.target.value })}
+            placeholder={eff.extra_args && eff.extra_args.length ? `saved: ${eff.extra_args.join(' ')}` : '--no-webui'}
+            spellCheck={false}
+          />
+        </div>
+      </div>
+    </>
+  )
+}
+
 function ModelSettingsForm(props: {
   model: Model
   onClose: () => void
@@ -643,14 +834,7 @@ function ModelSettingsForm(props: {
 }) {
   const [eff, setEff] = useState<ModelSettings>({})
   const [saved, setSaved] = useState(false)
-  const [ctx, setCtx] = useState('')
-  const [kvK, setKvK] = useState('')
-  const [kvV, setKvV] = useState('')
-  const [gpuLayers, setGpuLayers] = useState('')
-  const [threads, setThreads] = useState('')
-  const [cpuRange, setCpuRange] = useState('')
-  const [extra, setExtra] = useState('')
-  const [advOpen, setAdvOpen] = useState(false)
+  const [draft, setDraft] = useState<ParamDraft>(emptyDraft())
 
   useEffect(() => {
     api
@@ -662,21 +846,17 @@ function ModelSettingsForm(props: {
       .catch(() => undefined)
   }, [props.model.id])
 
+  const onChange = (patch: Partial<ParamDraft>) => setDraft((d) => ({ ...d, ...patch }))
+
   const save = async () => {
     try {
       const current = await api.modelSettings(props.model.id)
-      const merged: ModelSettings = { ...current.saved }
-      if (ctx) merged.context_size = Number(ctx)
-      if (kvK) merged.cache_type_k = kvK
-      if (kvV) merged.cache_type_v = kvV
-      if (gpuLayers) merged.gpu_layers = gpuLayers
-      if (threads) merged.threads = Number(threads)
-      if (cpuRange) merged.cpu_range = cpuRange
-      if (extra.trim()) merged.extra_args = splitArgs(extra)
+      const merged = mergeDraft(current.saved ?? {}, draft)
       const res = await api.saveModelSettings(props.model.id, merged)
       setSaved(true)
       setEff(res.effective ?? {})
-      props.notify('Saved as model default')
+      setDraft(emptyDraft())
+      props.notify('Saved model settings')
     } catch (e) {
       props.notify(String(e), true)
     }
@@ -688,6 +868,7 @@ function ModelSettingsForm(props: {
       setSaved(false)
       const r = await api.modelSettings(props.model.id)
       setEff(r.effective ?? {})
+      setDraft(emptyDraft())
       props.notify('Cleared saved settings')
     } catch (e) {
       props.notify(String(e), true)
@@ -696,94 +877,11 @@ function ModelSettingsForm(props: {
 
   return (
     <div>
-      <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-        These arguments are saved for this model and applied when it is loaded from the <strong>Server</strong> tab.
-        Blank = use the global default.
+      <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+        Saved per model, applied when the model is loaded from the <strong>Server</strong> tab. Blank fields
+        use the global default.
       </div>
-      <div className="form-grid">
-        <div>
-          <label>Context size (-c)</label>
-          <input
-            value={ctx}
-            onChange={(e) => setCtx(e.target.value)}
-            placeholder={eff.context_size ? `saved: ${eff.context_size}` : 'default'}
-          />
-        </div>
-      </div>
-
-      <div className="row" style={{ marginTop: 4 }}>
-        <button onClick={() => setAdvOpen(!advOpen)}>{advOpen ? 'Hide' : 'Advanced'} settings</button>
-        <span className="muted" style={{ fontSize: 12 }}>
-          Blank = use the saved setting (or global default); typing overrides it.
-        </span>
-      </div>
-
-      {advOpen && (
-        <div className="form-grid">
-          <div>
-            <label>KV cache K (--cache-type-k)</label>
-            <select value={kvK} onChange={(e) => setKvK(e.target.value)}>
-              <option value="">{eff.cache_type_k ? `saved: ${eff.cache_type_k}` : 'default'}</option>
-              {KV_CACHE_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label>KV cache V (--cache-type-v)</label>
-            <select value={kvV} onChange={(e) => setKvV(e.target.value)}>
-              <option value="">{eff.cache_type_v ? `saved: ${eff.cache_type_v}` : 'default'}</option>
-              {KV_CACHE_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label>GPU layers (-ngl)</label>
-            <input
-              value={gpuLayers}
-              onChange={(e) => setGpuLayers(e.target.value)}
-              placeholder={eff.gpu_layers ? `saved: ${eff.gpu_layers}` : 'e.g. 99 or 0'}
-            />
-          </div>
-          <div>
-            <label>CPU threads (-t)</label>
-            <input
-              value={threads}
-              onChange={(e) => setThreads(e.target.value)}
-              placeholder={eff.threads ? `saved: ${eff.threads}` : 'default'}
-            />
-          </div>
-          <div>
-            <label>CPU range (--cpu-range)</label>
-            <input
-              value={cpuRange}
-              onChange={(e) => setCpuRange(e.target.value)}
-              placeholder={eff.cpu_range ? `saved: ${eff.cpu_range}` : 'e.g. 0-7'}
-            />
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label>Extra llama.cpp arguments (passed to llama-server verbatim)</label>
-            <textarea
-              className="mono"
-              style={{ width: '100%', minHeight: 56 }}
-              value={extra}
-              onChange={(e) => setExtra(e.target.value)}
-              placeholder={
-                eff.extra_args && eff.extra_args.length
-                  ? `saved: ${eff.extra_args.join(' ')}`
-                  : '--flash-attn on --no-webui'
-              }
-              spellCheck={false}
-            />
-          </div>
-        </div>
-      )}
-
+      <ParamsFields draft={draft} eff={eff} onChange={onChange} />
       <div className="row" style={{ marginTop: 14 }}>
         <button className="primary" onClick={save}>
           Save
@@ -838,14 +936,8 @@ function ServerTab(props: {
   const [loadModelID, setLoadModelID] = useState('')
   const [eff, setEff] = useState<ModelSettings>({})
   const [saved, setSaved] = useState(false)
-  const [ctx, setCtx] = useState('')
-  const [kvK, setKvK] = useState('')
-  const [kvV, setKvV] = useState('')
-  const [gpuLayers, setGpuLayers] = useState('')
-  const [threads, setThreads] = useState('')
-  const [cpuRange, setCpuRange] = useState('')
-  const [extra, setExtra] = useState('')
-  const [advOpen, setAdvOpen] = useState(false)
+  const [draft, setDraft] = useState<ParamDraft>(emptyDraft())
+  const onChange = (patch: Partial<ParamDraft>) => setDraft((d) => ({ ...d, ...patch }))
 
   useEffect(() => {
     if (!loadModelID) {
@@ -861,13 +953,7 @@ function ServerTab(props: {
       })
       .catch(() => undefined)
     // Clear overrides so blank means "use the saved setting".
-    setCtx('')
-    setKvK('')
-    setKvV('')
-    setGpuLayers('')
-    setThreads('')
-    setCpuRange('')
-    setExtra('')
+    setDraft(emptyDraft())
   }, [loadModelID])
 
   useEffect(() => {
@@ -905,15 +991,7 @@ function ServerTab(props: {
   const load = async () => {
     if (!loadModelID) return
     try {
-      await api.loadModel(loadModelID, {
-        context_size: ctx ? Number(ctx) : undefined,
-        cache_type_k: kvK || undefined,
-        cache_type_v: kvV || undefined,
-        gpu_layers: gpuLayers || undefined,
-        threads: threads ? Number(threads) : undefined,
-        cpu_range: cpuRange || undefined,
-        extra_args: extra.trim() ? splitArgs(extra) : undefined,
-      })
+      await api.loadModel(loadModelID, draftToParams(draft))
       props.notify('Loading…')
       props.onRefresh()
     } catch (e) {
@@ -925,17 +1003,11 @@ function ServerTab(props: {
     if (!loadModelID) return
     try {
       const current = await api.modelSettings(loadModelID)
-      const merged: ModelSettings = { ...current.saved }
-      if (ctx) merged.context_size = Number(ctx)
-      if (kvK) merged.cache_type_k = kvK
-      if (kvV) merged.cache_type_v = kvV
-      if (gpuLayers) merged.gpu_layers = gpuLayers
-      if (threads) merged.threads = Number(threads)
-      if (cpuRange) merged.cpu_range = cpuRange
-      if (extra.trim()) merged.extra_args = splitArgs(extra)
+      const merged = mergeDraft(current.saved ?? {}, draft)
       const res = await api.saveModelSettings(loadModelID, merged)
       setSaved(true)
       setEff(res.effective ?? {})
+      setDraft(emptyDraft())
       props.notify('Saved as model default')
     } catch (e) {
       props.notify(String(e), true)
@@ -949,6 +1021,7 @@ function ServerTab(props: {
       setSaved(false)
       const r = await api.modelSettings(loadModelID)
       setEff(r.effective ?? {})
+      setDraft(emptyDraft())
       props.notify('Cleared saved settings')
     } catch (e) {
       props.notify(String(e), true)
@@ -1013,93 +1086,6 @@ function ServerTab(props: {
             Load
           </button>
           <span className="spacer" />
-          <button onClick={() => setAdvOpen(!advOpen)} disabled={!loadModelID}>
-            {advOpen ? 'Hide' : 'Advanced'} settings
-          </button>
-        </div>
-
-        <div className="form-grid" style={{ marginTop: 10 }}>
-          <div>
-            <label>Context size (-c)</label>
-            <input
-              value={ctx}
-              onChange={(e) => setCtx(e.target.value)}
-              placeholder={eff.context_size ? `saved: ${eff.context_size}` : 'default'}
-            />
-          </div>
-        </div>
-
-        {advOpen && (
-          <div className="form-grid">
-            <div>
-              <label>KV cache K (--cache-type-k)</label>
-              <select value={kvK} onChange={(e) => setKvK(e.target.value)}>
-                <option value="">{eff.cache_type_k ? `saved: ${eff.cache_type_k}` : 'default'}</option>
-                {KV_CACHE_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label>KV cache V (--cache-type-v)</label>
-              <select value={kvV} onChange={(e) => setKvV(e.target.value)}>
-                <option value="">{eff.cache_type_v ? `saved: ${eff.cache_type_v}` : 'default'}</option>
-                {KV_CACHE_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label>GPU layers (-ngl)</label>
-              <input
-                value={gpuLayers}
-                onChange={(e) => setGpuLayers(e.target.value)}
-                placeholder={eff.gpu_layers ? `saved: ${eff.gpu_layers}` : 'default'}
-              />
-            </div>
-            <div>
-              <label>CPU threads (-t)</label>
-              <input
-                value={threads}
-                onChange={(e) => setThreads(e.target.value)}
-                placeholder={eff.threads ? `saved: ${eff.threads}` : 'default'}
-              />
-            </div>
-            <div>
-              <label>CPU range (--cpu-range)</label>
-              <input
-                value={cpuRange}
-                onChange={(e) => setCpuRange(e.target.value)}
-                placeholder={eff.cpu_range ? `saved: ${eff.cpu_range}` : 'e.g. 0-7'}
-              />
-            </div>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label>Extra llama.cpp arguments</label>
-              <textarea
-                className="mono"
-                style={{ width: '100%', minHeight: 56 }}
-                value={extra}
-                onChange={(e) => setExtra(e.target.value)}
-                placeholder={
-                  eff.extra_args && eff.extra_args.length
-                    ? `saved: ${eff.extra_args.join(' ')}`
-                    : '--flash-attn on --no-webui'
-                }
-                spellCheck={false}
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-          Leave a field blank to use the model's saved setting (or the global default); typing overrides it.
-        </div>
-
-        <div className="row" style={{ marginTop: 10 }}>
           <button onClick={saveDefaults} disabled={!loadModelID}>
             Save as model default
           </button>
@@ -1112,6 +1098,12 @@ function ServerTab(props: {
             </>
           )}
         </div>
+
+        <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+          Leave a field blank to use the model's saved setting (or the global default); typing overrides it.
+        </div>
+
+        <ParamsFields draft={draft} eff={eff} onChange={onChange} />
       </div>
 
       <h2>Loaded models</h2>

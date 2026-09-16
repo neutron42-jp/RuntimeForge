@@ -31,11 +31,14 @@ chosen per model automatically — no manual runtime switching.
   overrides are also supported.
 - **Model registry** — register folders (with a configurable recursion depth) and individual
   `.gguf` files; split shards are grouped; multimodal projectors are flagged and hidden by default.
-- **Per-model load settings** — context size, KV-cache quantization (`--cache-type-k/-v`),
-  GPU/CPU offload (`-ngl`), CPU threads (`-t`), CPU affinity (`--cpu-range`), and a free-form
-  **extra llama.cpp arguments** field passed to `llama-server` verbatim. Models are loaded from
-  the **Server** tab; leave a field blank to use the saved value, or type to override it. Saved
-  per model (`Save as model default`).
+- **Per-model load settings** — mirroring LM Studio: context size, GPU offload (`-ngl`),
+  CPU threads (`-t`), eval batch size (`-b`), flash attention, KV-cache quantization
+  (`--cache-type-k/-v`), **offload KV cache to GPU**, **model load mode** (`--load-mode`:
+  auto/none/mmap/mlock/mmap+mlock), seed, RoPE frequency base/scale, CPU affinity, and a
+  free-form **extra llama.cpp arguments** field passed to `llama-server` verbatim.
+  Edit them per model from the Models tab (`Config…`, an in-app modal) or at load time on the
+  Server tab; blank fields fall back to the saved value / global default. `Save as model default`
+  persists them.
 - **OpenAI-compatible API** — `/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`.
   Send `"model": "loaded"` to route to whatever model is currently loaded.
 - **Live inference logs** — `llama-server` stdout/stderr is streamed to the UI.

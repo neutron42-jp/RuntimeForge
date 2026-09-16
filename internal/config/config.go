@@ -52,14 +52,22 @@ type Runtime struct {
 }
 
 // LoadConfig holds default llama-server launch parameters (SPEC §6).
+// The fields mirror LM Studio's per-model load settings.
 type LoadConfig struct {
-	ExtraArgs    []string `json:"extra_args" toml:"extra_args"`
-	GPULayers    string   `json:"gpu_layers" toml:"gpu_layers"`
-	Threads      int      `json:"threads" toml:"threads"`
-	ContextSize  int      `json:"context_size" toml:"context_size"`
-	KVCacheTypeK string   `json:"cache_type_k" toml:"cache_type_k"`
-	KVCacheTypeV string   `json:"cache_type_v" toml:"cache_type_v"`
-	CPURange     string   `json:"cpu_range" toml:"cpu_range"`
+	ExtraArgs      []string `json:"extra_args" toml:"extra_args"`
+	GPULayers      string   `json:"gpu_layers" toml:"gpu_layers"`
+	Threads        int      `json:"threads" toml:"threads"`
+	ContextSize    int      `json:"context_size" toml:"context_size"`
+	EvalBatchSize  int      `json:"eval_batch_size" toml:"eval_batch_size"`
+	FlashAttn      string   `json:"flash_attn" toml:"flash_attn"`
+	KVCacheTypeK   string   `json:"cache_type_k" toml:"cache_type_k"`
+	KVCacheTypeV   string   `json:"cache_type_v" toml:"cache_type_v"`
+	KVCacheOffload string   `json:"kv_cache_offload" toml:"kv_cache_offload"`
+	LoadMode       string   `json:"load_mode" toml:"load_mode"`
+	Seed           int      `json:"seed" toml:"seed"`
+	RopeFreqBase   string   `json:"rope_freq_base" toml:"rope_freq_base"`
+	RopeFreqScale  string   `json:"rope_freq_scale" toml:"rope_freq_scale"`
+	CPURange       string   `json:"cpu_range" toml:"cpu_range"`
 }
 
 // Server holds HTTP server defaults.
