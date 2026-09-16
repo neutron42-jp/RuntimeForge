@@ -169,7 +169,13 @@ cmake_defines = {}
 
 [load]
 # すべてのモデルに適用される llama-server 既定引数
-extra_args = ["--no-webui"]
+extra_args = []
+gpu_layers = ""          # -ngl (GPU/CPU オフロード)
+threads = 0              # -t (CPU コア数)
+context_size = 0         # -c
+cache_type_k = ""        # --cache-type-k (KVキャッシュ量子化)
+cache_type_v = ""        # --cache-type-v
+cpu_range = ""           # --cpu-range (例 "0-7")
 
 [models]
 scan_dirs = ["~/.runtimeforge/models"]
@@ -268,8 +274,11 @@ nvcc  = ""
   `general.size_label`。量子化名はファイル名から抽出（`file_type` はバージョン間で
   ずれるため）
 - 明示ロードのみ（JIT/自動ロードなし）。UI または API からロード/アンロード
-- ロードパラメータ（コンテキスト長、GPU レイヤ、スレッド数、追加引数）はすべて上書き可能、
-  モデル別に保存（§6）
+- **モデル個別のロード設定**を保存可能（`state/model_settings.json`、モデルID単位）:
+  コンテキスト長 `-c`、KVキャッシュ量子化 `--cache-type-k/-v`（f16/q8_0/q4_0 等）、
+  GPU/CPUオフロード `-ngl`、CPUコア数 `-t`、CPUアフィニティ `--cpu-range`、
+  **任意のllama.cpp引数をそのまま追記**（`extra_args`）。グローバル既定（`[load]`）に
+  モデル個別設定を重ね、リクエスト時の上書きが最優先
 
 ## 13. モデルスーパーバイザ
 
@@ -301,6 +310,7 @@ nvcc  = ""
 | GET/PUT | `/selections` | フォーマット単位/モデル個別の選択設定 |
 | GET/POST | `/models`, `/models/scan` | モデル一覧/スキャン |
 | GET/PUT | `/models/sources` | 登録ソース（`scan_dirs`/`roots`/`files`）の取得・置換＋再スキャン |
+| GET/PUT/DELETE | `/models/{id}/settings` | モデル個別のロード設定（context/KV量子化/offload/threads/生引数） |
 | POST | `/models/{id}/load` / `/unload` | 明示ロード/アンロード（オーバーライド指定可） |
 | GET | `/events` | SSE（状態変更・ビルド進捗・**llama-server 推論ログ**） |
 

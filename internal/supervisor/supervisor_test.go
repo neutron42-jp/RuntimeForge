@@ -253,6 +253,26 @@ func TestSetPortRange(t *testing.T) {
 	}
 }
 
+func TestBuildArgsKVAndCPU(t *testing.T) {
+	s := spec()
+	s.Params = Params{
+		ContextSize:  8192,
+		KVCacheTypeK: "q8_0",
+		KVCacheTypeV: "q4_0",
+		GPULayers:    "99",
+		Threads:      8,
+		CPURange:     "0-7",
+		ExtraArgs:    []string{"--flash-attn"},
+	}
+	args := BuildArgs(s, 21000)
+	joined := strings.Join(args, " ")
+	for _, want := range []string{"-c 8192", "--cache-type-k q8_0", "--cache-type-v q4_0", "-ngl 99", "-t 8", "--cpu-range 0-7", "--flash-attn"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("args missing %q: %v", want, args)
+		}
+	}
+}
+
 func TestBuildArgs(t *testing.T) {
 	s := spec()
 	s.Params = Params{ContextSize: 8192, GPULayers: "99", Threads: 8, ExtraArgs: []string{"--no-webui"}}

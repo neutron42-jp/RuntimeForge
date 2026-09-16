@@ -52,6 +52,16 @@ export interface ModelSources {
   files: string[] | null
 }
 
+export interface ModelSettings {
+  context_size?: number
+  cache_type_k?: string
+  cache_type_v?: string
+  gpu_layers?: string
+  threads?: number
+  cpu_range?: string
+  extra_args?: string[]
+}
+
 export interface Instance {
   id: string
   model_id: string

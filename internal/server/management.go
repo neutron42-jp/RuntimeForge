@@ -10,6 +10,7 @@ import (
 
 	"runtimeforge/internal/build"
 	"runtimeforge/internal/config"
+	"runtimeforge/internal/loadsettings"
 	"runtimeforge/internal/models"
 	"runtimeforge/internal/runtimes"
 	"runtimeforge/internal/selection"
@@ -362,6 +363,71 @@ func modelTargets(cfg config.Config) ([]models.Dir, []string) {
 	return dirs, cfg.Models.Files
 }
 
+// loadParams resolves launch parameters: global [load] defaults, then
+// per-model saved settings (SPEC §12).
+func (s *Server) loadParams(modelID string) supervisor.Params {
+	cfg := s.cfg()
+	params := supervisor.Params{
+		ContextSize:  cfg.Load.ContextSize,
+		KVCacheTypeK: cfg.Load.KVCacheTypeK,
+		KVCacheTypeV: cfg.Load.KVCacheTypeV,
+		GPULayers:    cfg.Load.GPULayers,
+		Threads:      cfg.Load.Threads,
+		CPURange:     cfg.Load.CPURange,
+		ExtraArgs:    append([]string(nil), cfg.Load.ExtraArgs...),
+	}
+	if s.deps.Settings != nil {
+		params = loadsettings.Merge(params, s.deps.Settings.Get(modelID))
+	}
+	return params
+}
+
+func (s *Server) handleModelSettingsGet(w http.ResponseWriter, r *http.Request) {
+	if s.deps.Settings == nil {
+		writeError(w, http.StatusServiceUnavailable, "settings unavailable")
+		return
+	}
+	id := r.PathValue("id")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"model_id":  id,
+		"has_saved": s.deps.Settings.Has(id),
+		"saved":     s.deps.Settings.Get(id),
+		"effective": s.loadParams(id),
+	})
+}
+
+func (s *Server) handleModelSettingsPut(w http.ResponseWriter, r *http.Request) {
+	if s.deps.Settings == nil {
+		writeError(w, http.StatusServiceUnavailable, "settings unavailable")
+		return
+	}
+	var p supervisor.Params
+	if err := ReadJSON(r, &p); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	id := r.PathValue("id")
+	if err := s.deps.Settings.Set(id, p); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.broadcast("settings", map[string]any{"model_id": id})
+	writeJSON(w, http.StatusOK, map[string]any{"saved": p, "effective": s.loadParams(id)})
+}
+
+func (s *Server) handleModelSettingsDelete(w http.ResponseWriter, r *http.Request) {
+	if s.deps.Settings == nil {
+		writeError(w, http.StatusServiceUnavailable, "settings unavailable")
+		return
+	}
+	id := r.PathValue("id")
+	if err := s.deps.Settings.Delete(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleModelLoad(w http.ResponseWriter, r *http.Request) {
 	if s.deps.Models == nil || s.deps.Supervisor == nil || s.deps.Runtimes == nil {
 		writeError(w, http.StatusServiceUnavailable, "load unavailable")
@@ -377,11 +443,14 @@ func (s *Server) handleModelLoad(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		RuntimeID   string   `json:"runtime_id"`
-		ContextSize int      `json:"context_size"`
-		GPULayers   string   `json:"gpu_layers"`
-		Threads     int      `json:"threads"`
-		ExtraArgs   []string `json:"extra_args"`
+		RuntimeID    string   `json:"runtime_id"`
+		ContextSize  int      `json:"context_size"`
+		KVCacheTypeK string   `json:"cache_type_k"`
+		KVCacheTypeV string   `json:"cache_type_v"`
+		GPULayers    string   `json:"gpu_layers"`
+		Threads      int      `json:"threads"`
+		CPURange     string   `json:"cpu_range"`
+		ExtraArgs    []string `json:"extra_args"`
 	}
 	if err := ReadJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -399,21 +468,25 @@ func (s *Server) handleModelLoad(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg := s.cfg()
-	params := supervisor.Params{
-		ContextSize: cfg.Load.ContextSize,
-		GPULayers:   cfg.Load.GPULayers,
-		Threads:     cfg.Load.Threads,
-		ExtraArgs:   append([]string(nil), cfg.Load.ExtraArgs...),
-	}
+	params := s.loadParams(model.ID)
+	// Per-load request overrides win over saved settings.
 	if body.ContextSize != 0 {
 		params.ContextSize = body.ContextSize
+	}
+	if body.KVCacheTypeK != "" {
+		params.KVCacheTypeK = body.KVCacheTypeK
+	}
+	if body.KVCacheTypeV != "" {
+		params.KVCacheTypeV = body.KVCacheTypeV
 	}
 	if body.GPULayers != "" {
 		params.GPULayers = body.GPULayers
 	}
 	if body.Threads != 0 {
 		params.Threads = body.Threads
+	}
+	if body.CPURange != "" {
+		params.CPURange = body.CPURange
 	}
 	params.ExtraArgs = append(params.ExtraArgs, body.ExtraArgs...)
 

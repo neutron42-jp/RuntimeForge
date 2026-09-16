@@ -53,10 +53,13 @@ type Runtime struct {
 
 // LoadConfig holds default llama-server launch parameters (SPEC §6).
 type LoadConfig struct {
-	ExtraArgs   []string `json:"extra_args" toml:"extra_args"`
-	GPULayers   string   `json:"gpu_layers" toml:"gpu_layers"`
-	Threads     int      `json:"threads" toml:"threads"`
-	ContextSize int      `json:"context_size" toml:"context_size"`
+	ExtraArgs    []string `json:"extra_args" toml:"extra_args"`
+	GPULayers    string   `json:"gpu_layers" toml:"gpu_layers"`
+	Threads      int      `json:"threads" toml:"threads"`
+	ContextSize  int      `json:"context_size" toml:"context_size"`
+	KVCacheTypeK string   `json:"cache_type_k" toml:"cache_type_k"`
+	KVCacheTypeV string   `json:"cache_type_v" toml:"cache_type_v"`
+	CPURange     string   `json:"cpu_range" toml:"cpu_range"`
 }
 
 // Server holds HTTP server defaults.

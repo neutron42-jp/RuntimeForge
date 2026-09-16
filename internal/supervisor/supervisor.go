@@ -36,10 +36,13 @@ const (
 
 // Params are llama-server launch parameters, all user overridable.
 type Params struct {
-	ContextSize int      `json:"context_size,omitempty"`
-	GPULayers   string   `json:"gpu_layers,omitempty"`
-	Threads     int      `json:"threads,omitempty"`
-	ExtraArgs   []string `json:"extra_args,omitempty"`
+	ContextSize  int      `json:"context_size,omitempty"`
+	KVCacheTypeK string   `json:"cache_type_k,omitempty"`
+	KVCacheTypeV string   `json:"cache_type_v,omitempty"`
+	GPULayers    string   `json:"gpu_layers,omitempty"`
+	Threads      int      `json:"threads,omitempty"`
+	CPURange     string   `json:"cpu_range,omitempty"`
+	ExtraArgs    []string `json:"extra_args,omitempty"`
 }
 
 // LoadSpec fully describes a load request.
@@ -462,11 +465,20 @@ func BuildArgs(spec LoadSpec, port int) []string {
 	if spec.Params.ContextSize > 0 {
 		args = append(args, "-c", strconv.Itoa(spec.Params.ContextSize))
 	}
+	if spec.Params.KVCacheTypeK != "" {
+		args = append(args, "--cache-type-k", spec.Params.KVCacheTypeK)
+	}
+	if spec.Params.KVCacheTypeV != "" {
+		args = append(args, "--cache-type-v", spec.Params.KVCacheTypeV)
+	}
 	if spec.Params.GPULayers != "" {
 		args = append(args, "-ngl", spec.Params.GPULayers)
 	}
 	if spec.Params.Threads > 0 {
 		args = append(args, "-t", strconv.Itoa(spec.Params.Threads))
+	}
+	if spec.Params.CPURange != "" {
+		args = append(args, "--cpu-range", spec.Params.CPURange)
 	}
 	args = append(args, spec.Params.ExtraArgs...)
 	return args

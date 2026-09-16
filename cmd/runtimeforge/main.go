@@ -22,6 +22,7 @@ import (
 	"runtimeforge/internal/config"
 	"runtimeforge/internal/gguf"
 	"runtimeforge/internal/hardware"
+	"runtimeforge/internal/loadsettings"
 	"runtimeforge/internal/models"
 	"runtimeforge/internal/runtimes"
 	"runtimeforge/internal/selection"
@@ -636,6 +637,10 @@ func buildDeps(p appdir.Paths, state *cfgState) (server.Deps, func(), error) {
 	if err != nil {
 		return server.Deps{}, nil, err
 	}
+	settingsStore, err := loadsettings.NewStore(p.StateFile("model_settings.json"))
+	if err != nil {
+		return server.Deps{}, nil, err
+	}
 
 	eng := build.NewEngine(p, srcMgr, state.Get, hardware.ExecRunner{}, build.ExecRunner{})
 	eng.OnSuccess = makeBuildHook(rtReg, srcMgr, hw)
@@ -662,6 +667,7 @@ func buildDeps(p appdir.Paths, state *cfgState) (server.Deps, func(), error) {
 		Runtimes:     rtReg,
 		Models:       modelReg,
 		Selections:   selStore,
+		Settings:     settingsStore,
 		Supervisor:   sup,
 		UpdateConfig: updateConfig,
 		AutoScan:     true,

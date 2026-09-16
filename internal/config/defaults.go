@@ -55,6 +55,11 @@ extra_args = []
 gpu_layers = ""
 threads = 0
 context_size = 0
+# KV cache quantization, e.g. "f16", "q8_0", "q4_0"
+cache_type_k = ""
+cache_type_v = ""
+# CPU affinity mask, e.g. "0-7" (llama-server --cpu-range)
+cpu_range = ""
 
 [models]
 scan_dirs = []

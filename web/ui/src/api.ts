@@ -5,6 +5,7 @@ import type {
   Manifest,
   Model,
   ModelRoot,
+  ModelSettings,
   ModelSources,
   Selections,
   Source,
@@ -93,10 +94,33 @@ export const api = {
     req<{ count: number; errors: string[] | null }>('POST', '/api/v1/models/scan'),
   loadModel: (
     id: string,
-    body: { runtime_id?: string; context_size?: number; gpu_layers?: string; threads?: number; extra_args?: string[] },
+    body: {
+      runtime_id?: string
+      context_size?: number
+      cache_type_k?: string
+      cache_type_v?: string
+      gpu_layers?: string
+      threads?: number
+      cpu_range?: string
+      extra_args?: string[]
+    },
   ) => req<Instance>('POST', `/api/v1/models/${encodeURIComponent(id)}/load`, body),
   unloadModel: (id: string) =>
     req<void>('POST', `/api/v1/models/${encodeURIComponent(id)}/unload`),
+
+  modelSettings: (id: string) =>
+    req<{ model_id: string; has_saved: boolean; saved: ModelSettings; effective: ModelSettings }>(
+      'GET',
+      `/api/v1/models/${encodeURIComponent(id)}/settings`,
+    ),
+  saveModelSettings: (id: string, body: ModelSettings) =>
+    req<{ saved: ModelSettings; effective: ModelSettings }>(
+      'PUT',
+      `/api/v1/models/${encodeURIComponent(id)}/settings`,
+      body,
+    ),
+  clearModelSettings: (id: string) =>
+    req<void>('DELETE', `/api/v1/models/${encodeURIComponent(id)}/settings`),
 
   instances: () => req<Instance[]>('GET', '/api/v1/instances'),
 }

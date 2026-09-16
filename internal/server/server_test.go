@@ -16,6 +16,7 @@ import (
 	"runtimeforge/internal/config"
 	"runtimeforge/internal/gguf"
 	"runtimeforge/internal/hardware"
+	"runtimeforge/internal/loadsettings"
 	"runtimeforge/internal/models"
 	"runtimeforge/internal/runtimes"
 	"runtimeforge/internal/selection"
@@ -40,6 +41,7 @@ func newTestServer(t *testing.T) (*Server, appdir.Paths, config.Config) {
 	srcMgr.EnsureDefault()
 	modelReg, _ := models.NewRegistry(p.StateFile("models.json"))
 	selStore, _ := selection.NewStore(p.StateFile("selections.json"))
+	settingsStore, _ := loadsettings.NewStore(p.StateFile("model_settings.json"))
 	sup := supervisor.New(supervisor.Options{Paths: p, PortRange: []int{31000, 31010}})
 
 	cur := cfg
@@ -51,6 +53,7 @@ func newTestServer(t *testing.T) (*Server, appdir.Paths, config.Config) {
 		Runtimes:   runtimes.NewRegistry(p.Runtimes),
 		Models:     modelReg,
 		Selections: selStore,
+		Settings:   settingsStore,
 		Supervisor: sup,
 		UpdateConfig: func(partial map[string]any) (config.Config, error) {
 			if err := config.SaveOverlay(p, partial); err != nil {
@@ -390,6 +393,55 @@ func TestScanReportsMissingDir(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "not found") {
 		t.Errorf("expected a missing-directory warning: %s", rec.Body.String())
+	}
+}
+
+func TestModelSettingsLifecycle(t *testing.T) {
+	s, _, _ := newTestServer(t)
+
+	rec := doJSON(t, s, http.MethodPut, "/api/v1/models/m1/settings", map[string]any{
+		"context_size": float64(8192),
+		"cache_type_k": "q8_0",
+		"cache_type_v": "q4_0",
+		"gpu_layers":   "99",
+		"threads":      float64(6),
+		"cpu_range":    "0-5",
+		"extra_args":   []string{"--flash-attn"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("put status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	rec = doJSON(t, s, http.MethodGet, "/api/v1/models/m1/settings", nil)
+	var got struct {
+		HasSaved  bool           `json:"has_saved"`
+		Saved     map[string]any `json:"saved"`
+		Effective map[string]any `json:"effective"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !got.HasSaved {
+		t.Error("has_saved = false")
+	}
+	if got.Saved["cache_type_k"] != "q8_0" {
+		t.Errorf("saved cache_type_k = %v", got.Saved["cache_type_k"])
+	}
+	if got.Effective["context_size"].(float64) != 8192 {
+		t.Errorf("effective context_size = %v", got.Effective["context_size"])
+	}
+
+	// DELETE clears it; effective falls back to defaults (0).
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/models/m1/settings", nil)
+	rec2 := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec2, req)
+	if rec2.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d", rec2.Code)
+	}
+	rec = doJSON(t, s, http.MethodGet, "/api/v1/models/m1/settings", nil)
+	json.Unmarshal(rec.Body.Bytes(), &got)
+	if got.HasSaved {
+		t.Error("settings still present after delete")
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	"runtimeforge/internal/build"
 	"runtimeforge/internal/config"
 	"runtimeforge/internal/hardware"
+	"runtimeforge/internal/loadsettings"
 	"runtimeforge/internal/models"
 	"runtimeforge/internal/runtimes"
 	"runtimeforge/internal/selection"
@@ -38,6 +39,8 @@ type Deps struct {
 	Models     *models.Registry
 	Selections *selection.Store
 	Supervisor *supervisor.Supervisor
+	// Settings holds per-model llama-server parameters.
+	Settings *loadsettings.Store
 	// UpdateConfig merges a partial configuration and returns the new
 	// effective configuration.
 	UpdateConfig func(partial map[string]any) (config.Config, error)
@@ -131,6 +134,9 @@ func (s *Server) routes(ui fs.FS) {
 	m.HandleFunc("POST /api/v1/models/scan", s.handleModelsScan)
 	m.HandleFunc("GET /api/v1/models/sources", s.handleModelSourcesGet)
 	m.HandleFunc("PUT /api/v1/models/sources", s.handleModelSourcesPut)
+	m.HandleFunc("GET /api/v1/models/{id}/settings", s.handleModelSettingsGet)
+	m.HandleFunc("PUT /api/v1/models/{id}/settings", s.handleModelSettingsPut)
+	m.HandleFunc("DELETE /api/v1/models/{id}/settings", s.handleModelSettingsDelete)
 	m.HandleFunc("POST /api/v1/models/{id}/load", s.handleModelLoad)
 	m.HandleFunc("POST /api/v1/models/{id}/unload", s.handleModelUnload)
 	m.HandleFunc("GET /api/v1/instances", s.handleInstances)

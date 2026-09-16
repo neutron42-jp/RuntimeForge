@@ -621,6 +621,16 @@ function ModelsTab(props: {
   )
 }
 
+function splitArgs(s: string): string[] {
+  const out: string[] = []
+  const re = /"([^"]*)"|'([^']*)'|(\S+)/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(s)) !== null) out.push(m[1] ?? m[2] ?? m[3])
+  return out
+}
+
+const KV_CACHE_TYPES = ['f32', 'f16', 'bf16', 'q8_0', 'q5_1', 'q5_0', 'q4_1', 'q4_0', 'iq4_nl']
+
 function LoadForm(props: {
   model: Model
   runtimes: Manifest[]
@@ -629,21 +639,66 @@ function LoadForm(props: {
 }) {
   const [runtimeID, setRuntimeID] = useState('')
   const [ctx, setCtx] = useState('')
+  const [kvK, setKvK] = useState('')
+  const [kvV, setKvV] = useState('')
   const [gpuLayers, setGpuLayers] = useState('')
   const [threads, setThreads] = useState('')
+  const [cpuRange, setCpuRange] = useState('')
   const [extra, setExtra] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    api
+      .modelSettings(props.model.id)
+      .then((r) => {
+        const e = r.effective ?? {}
+        setSaved(r.has_saved)
+        setCtx(e.context_size ? String(e.context_size) : '')
+        setKvK(e.cache_type_k ?? '')
+        setKvV(e.cache_type_v ?? '')
+        setGpuLayers(e.gpu_layers ?? '')
+        setThreads(e.threads ? String(e.threads) : '')
+        setCpuRange(e.cpu_range ?? '')
+        setExtra((e.extra_args ?? []).join(' '))
+      })
+      .catch(() => undefined)
+  }, [props.model.id])
+
+  const settings = () => ({
+    context_size: ctx ? Number(ctx) : 0,
+    cache_type_k: kvK,
+    cache_type_v: kvV,
+    gpu_layers: gpuLayers,
+    threads: threads ? Number(threads) : 0,
+    cpu_range: cpuRange,
+    extra_args: extra ? splitArgs(extra) : [],
+  })
 
   const load = async () => {
     try {
-      await api.loadModel(props.model.id, {
-        runtime_id: runtimeID || undefined,
-        context_size: ctx ? Number(ctx) : undefined,
-        gpu_layers: gpuLayers || undefined,
-        threads: threads ? Number(threads) : undefined,
-        extra_args: extra ? extra.split(/\s+/).filter(Boolean) : undefined,
-      })
+      await api.loadModel(props.model.id, { runtime_id: runtimeID || undefined, ...settings() })
       props.notify(`Loading ${props.model.name}…`)
       props.onDone()
+    } catch (e) {
+      props.notify(String(e), true)
+    }
+  }
+
+  const save = async () => {
+    try {
+      await api.saveModelSettings(props.model.id, settings())
+      setSaved(true)
+      props.notify(`Saved settings for ${props.model.name}`)
+    } catch (e) {
+      props.notify(String(e), true)
+    }
+  }
+
+  const clear = async () => {
+    try {
+      await api.clearModelSettings(props.model.id)
+      setSaved(false)
+      props.notify('Cleared saved settings')
     } catch (e) {
       props.notify(String(e), true)
     }
@@ -664,25 +719,69 @@ function LoadForm(props: {
           </select>
         </div>
         <div>
-          <label>Context size</label>
+          <label>Context size (-c)</label>
           <input value={ctx} onChange={(e) => setCtx(e.target.value)} placeholder="default" />
         </div>
         <div>
-          <label>GPU layers</label>
-          <input value={gpuLayers} onChange={(e) => setGpuLayers(e.target.value)} placeholder="e.g. 99" />
+          <label>KV cache K (--cache-type-k)</label>
+          <select value={kvK} onChange={(e) => setKvK(e.target.value)}>
+            <option value="">default</option>
+            {KV_CACHE_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
         </div>
         <div>
-          <label>Threads</label>
+          <label>KV cache V (--cache-type-v)</label>
+          <select value={kvV} onChange={(e) => setKvV(e.target.value)}>
+            <option value="">default</option>
+            {KV_CACHE_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label>GPU layers (-ngl, offload)</label>
+          <input value={gpuLayers} onChange={(e) => setGpuLayers(e.target.value)} placeholder="e.g. 99 or 0" />
+        </div>
+        <div>
+          <label>CPU threads (-t)</label>
           <input value={threads} onChange={(e) => setThreads(e.target.value)} placeholder="default" />
         </div>
+        <div>
+          <label>CPU range (--cpu-range)</label>
+          <input value={cpuRange} onChange={(e) => setCpuRange(e.target.value)} placeholder="e.g. 0-7" />
+        </div>
         <div style={{ gridColumn: '1 / -1' }}>
-          <label>Extra llama-server args</label>
-          <input style={{ width: '100%' }} value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="--flash-attn --no-webui" />
+          <label>Extra llama.cpp arguments (passed to llama-server verbatim)</label>
+          <textarea
+            className="mono"
+            style={{ width: '100%', minHeight: 56 }}
+            value={extra}
+            onChange={(e) => setExtra(e.target.value)}
+            placeholder="--flash-attn on --no-webui --rope-scaling yarn --rope-freq-scale 0.5"
+            spellCheck={false}
+          />
         </div>
       </div>
-      <button className="primary" onClick={load}>
-        Load {props.model.name}
-      </button>
+      <div className="row">
+        <button className="primary" onClick={load}>
+          Load {props.model.name}
+        </button>
+        <button onClick={save}>Save as model default</button>
+        {saved && (
+          <>
+            <span className="badge accent">saved</span>
+            <button className="danger" onClick={clear}>
+              Clear
+            </button>
+          </>
+        )}
+      </div>
     </div>
   )
 }
