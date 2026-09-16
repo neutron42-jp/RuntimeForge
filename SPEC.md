@@ -2,8 +2,8 @@
 
 ## 1. 目的
 
-LM Studio は upstream llama.cpp のビルド済みランタイムしか配布しないため、k2horizon 等の
-新アーキテクチャを扱うフォークを実行時に選べない。本プロジェクトは、**任意の Git リポジトリ
+LM Studio は upstream llama.cpp のビルド済みランタイムしか配布しないため、upstream が未対応の
+新しいモデルアーキテクチャを扱うフォークを実行時に選べない。本プロジェクトは、**任意の Git リポジトリ
 （フォーク）を取り込み・ローカルビルドし、モデルに応じて最適なランタイムを自動選択して推論
 させる**、LM Studio ライクなローカル推論基盤を提供する。
 
@@ -137,8 +137,9 @@ max_concurrent_builds = 1
 generator = "Ninja"
 build_type = "Release"
 parallel_jobs = 0            # 0 = 自動 (CPU数)
-# 使用コンパイラ。"gcc-15"/"g++-15" は Fedora 44 の既定 gcc16 で
-# llama.cpp がビルドエラーになるための回避。"" でシステム既定。
+# 使用コンパイラ。一部ディストリビューションの既定 gcc（例: gcc 16）は
+# llama.cpp / nvcc のビルドに失敗するため、gcc 15 系を指定する例。
+# "" でシステム既定。
 cc = "gcc-15"
 cxx = "g++-15"
 # すべてのバックエンドに共通で足す CMake 変数
@@ -199,9 +200,9 @@ nvcc  = ""
   `CC=<cc> CXX=<cxx> cmake -S <src> -B <build> -G <generator> -DCMAKE_BUILD_TYPE=<type> <cmake_defines> <extra_configure_args>`
   → `cmake --build <build> <extra_build_args>`
 - コンパイラは `[build].cc/cxx`（バックエンド別に上書き可）で指定。既定 `gcc-15`/`g++-15`
-  （Fedora 44 の既定 gcc16 は llama.cpp のビルドに失敗するため）。空ならシステム既定を使用
+  （既定の新しい gcc では llama.cpp / nvcc のビルドに失敗することがあるため）。空ならシステム既定を使用
 - CUDA ビルド時は `CMAKE_CUDA_HOST_COMPILER` を設定中の CXX から自動設定
-  （nvcc はホストコンパイラを別判定するため。g++-15 を明示しないと gcc16 で失敗する）
+  （nvcc はホストコンパイラを別判定するため、明示しないと新しい gcc で失敗する）
 - ビルド引数はジョブ単位で上書き可能（CMake defines / 追加 configure・build 引数 / CC・CXX /
   generator / build type / 並列数）
 - 成果物: `llama-server`（主）, `llama-cli`, 共有ライブラリ, `llama-bench`
@@ -226,7 +227,7 @@ nvcc  = ""
   "resolved_cmake_flags": ["-DGGML_CUDA=ON", "-DGGML_NATIVE=ON"],
   "binaries": { "llama-server": "bin/llama-server", "llama-cli": "bin/llama-cli" },
   "supported_architectures": ["llama", "qwen3", "kimi-k3", "gemma4", "..."],
-  "host_gpus": ["NVIDIA GeForce RTX 5060"]
+  "host_gpus": ["NVIDIA GeForce RTX 4090"]
 }
 ```
 

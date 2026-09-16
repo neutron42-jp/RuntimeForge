@@ -64,7 +64,7 @@ GPU0:
 	driverInfo         = Mesa 26.1.8
 GPU1:
 	apiVersion         = 1.4.341
-	deviceName         = NVIDIA GeForce RTX 5060 Laptop GPU
+	deviceName         = NVIDIA GeForce RTX 4090
 	driverName         = NVIDIA
 GPU2:
 	apiVersion         = 1.4.354
@@ -72,7 +72,7 @@ GPU2:
 	driverName         = llvmpipe
 `
 
-const sampleSMI = "NVIDIA GeForce RTX 5060 Laptop GPU, 8151, 610.57.04\n"
+const sampleSMI = "NVIDIA GeForce RTX 4090, 24564, 555.42.02\n"
 
 func fullRunner() *fakeRunner {
 	f := newFakeRunner()
@@ -84,7 +84,7 @@ func fullRunner() *fakeRunner {
 	f.add("nvcc", "nvcc: NVIDIA (R) Cuda compiler")
 	f.add("vulkaninfo", "vulkaninfo summary")
 	f.add("glslc", "shaderc v2026.1")
-	f.add("nvidia-smi", "NVIDIA-SMI 610.57.04")
+	f.add("nvidia-smi", "NVIDIA-SMI 555.42.02")
 	f.put("vulkaninfo --summary", sampleVulkan)
 	f.put("nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader,nounits", sampleSMI)
 	return f
@@ -119,8 +119,8 @@ func TestDetectFullHost(t *testing.T) {
 	if nvidia == nil {
 		t.Fatal("nvidia GPU not found")
 	}
-	if nvidia.MemoryMB != 8151 {
-		t.Errorf("nvidia memory = %d, want 8151 (from nvidia-smi)", nvidia.MemoryMB)
+	if nvidia.MemoryMB != 24564 {
+		t.Errorf("nvidia memory = %d, want 24564 (from nvidia-smi)", nvidia.MemoryMB)
 	}
 	if !hasAPI(nvidia.APIs, "vulkan") || !hasAPI(nvidia.APIs, "cuda") {
 		t.Errorf("nvidia APIs = %v, want cuda+vulkan", nvidia.APIs)

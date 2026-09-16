@@ -434,7 +434,7 @@ function ModelsTab(props: {
         <div className="row">
           <input
             style={{ minWidth: 320 }}
-            placeholder="folder path (e.g. ~/LocalLLMs)"
+            placeholder="folder path (e.g. ~/models)"
             value={rootPath}
             onChange={(e) => setRootPath(e.target.value)}
           />
