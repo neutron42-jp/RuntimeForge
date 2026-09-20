@@ -192,6 +192,32 @@ func TestEnsureCheckoutCommit(t *testing.T) {
 	}
 }
 
+func TestEnsureCheckoutUsesRegisteredURLAfterChange(t *testing.T) {
+	ctx := context.Background()
+	repoA := initRepo(t)
+	m, _ := newManager(t)
+	if err := m.Add(Source{Name: "s", URL: repoA, Ref: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.EnsureClone(ctx, "s"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The registered URL changes to a different repository whose commit
+	// is not present in the existing clone (the stale origin).
+	repoB := initRepo(t)
+	head := gitHead(t, repoB)
+	m.update("s", func(s *Source) { s.URL = repoB })
+
+	got, err := m.EnsureCheckout(ctx, "s", "")
+	if err != nil {
+		t.Fatalf("checkout after url change: %v", err)
+	}
+	if got != head {
+		t.Errorf("head = %q, want %q", got, head)
+	}
+}
+
 func TestResolveRemoteTagAndHash(t *testing.T) {
 	ctx := context.Background()
 	repo := initRepo(t)

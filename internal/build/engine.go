@@ -372,6 +372,9 @@ func (e *Engine) run(ctx context.Context, cancel context.CancelFunc, j *Job, req
 	e.emitJob(j)
 
 	fail := func(msg string, code int) {
+		// Surface the failure in the log stream so it is visible even
+		// when the failing step produced no output of its own.
+		logger("!! " + msg)
 		fin := time.Now().UTC()
 		e.update(j.ID, func(j *Job) {
 			j.Status = StatusFailed

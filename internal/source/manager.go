@@ -270,6 +270,14 @@ func (m *Manager) EnsureCheckout(ctx context.Context, name, commit string) (stri
 		return "", err
 	}
 	dir := m.LocalPath(name)
+	// Keep the clone's origin in sync with the registered URL: it may
+	// have changed since the checkout was created, in which case
+	// fetching "origin" would pull from the stale location.
+	if _, err := m.git.Run(ctx, dir, "remote", "set-url", "origin", src.URL); err != nil {
+		if _, err := m.git.Run(ctx, dir, "remote", "add", "origin", src.URL); err != nil {
+			return "", err
+		}
+	}
 	if _, err := m.git.Run(ctx, dir, "fetch", "--tags", "--prune", "origin"); err != nil {
 		return "", err
 	}
