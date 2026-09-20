@@ -13,15 +13,11 @@ func TestStorePersistAndDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := supervisor.Params{
-		ContextSize:  8192,
-		KVCacheTypeK: "q8_0",
-		KVCacheTypeV: "q8_0",
-		GPULayers:    "99",
-		Threads:      8,
-		CPURange:     "0-7",
-		ExtraArgs:    []string{"--flash-attn"},
-	}
+	p := supervisor.Params{Args: supervisor.Args{
+		{Name: "-c", Value: "8192"},
+		{Name: "--flash-attn", Value: "on"},
+		{Name: "-ngl", Value: "99"},
+	}}
 	if err := s.Set("model-1", p); err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +31,7 @@ func TestStorePersistAndDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := s2.Get("model-1")
-	if got.ContextSize != 8192 || got.KVCacheTypeK != "q8_0" || got.Threads != 8 || got.GPULayers != "99" {
+	if len(got.Args) != 3 || got.Args[0] != (supervisor.Arg{Name: "-c", Value: "8192"}) || got.Args[2].Name != "-ngl" {
 		t.Errorf("round-trip mismatch: %+v", got)
 	}
 
@@ -52,36 +48,22 @@ func TestStorePersistAndDelete(t *testing.T) {
 }
 
 func TestMerge(t *testing.T) {
-	base := supervisor.Params{
-		ContextSize:  4096,
-		KVCacheTypeK: "f16",
-		GPULayers:    "0",
-		Threads:      4,
-		ExtraArgs:    []string{"--global"},
-	}
-	over := supervisor.Params{
-		ContextSize:  16384,
-		KVCacheTypeV: "q4_0",
-		Threads:      12,
-		ExtraArgs:    []string{"--per-model"},
-	}
+	base := supervisor.Params{Args: supervisor.Args{
+		{Name: "-c", Value: "4096"},
+		{Name: "--threads", Value: "4"},
+	}}
+	over := supervisor.Params{Args: supervisor.Args{
+		{Name: "--no-webui"},
+	}}
 	got := Merge(base, over)
-	if got.ContextSize != 16384 {
-		t.Errorf("context = %d, want 16384", got.ContextSize)
+	if len(got.Args) != 3 {
+		t.Fatalf("args = %v", got.Args)
 	}
-	if got.KVCacheTypeK != "f16" {
-		t.Errorf("cache K should keep base value, got %q", got.KVCacheTypeK)
+	if got.Args[0].Name != "-c" || got.Args[1].Name != "--threads" || got.Args[2].Name != "--no-webui" {
+		t.Errorf("merge order wrong: %v", got.Args)
 	}
-	if got.KVCacheTypeV != "q4_0" {
-		t.Errorf("cache V = %q", got.KVCacheTypeV)
-	}
-	if got.GPULayers != "0" {
-		t.Errorf("gpu layers = %q, want base 0", got.GPULayers)
-	}
-	if got.Threads != 12 {
-		t.Errorf("threads = %d", got.Threads)
-	}
-	if len(got.ExtraArgs) != 2 || got.ExtraArgs[0] != "--global" || got.ExtraArgs[1] != "--per-model" {
-		t.Errorf("extra args = %v", got.ExtraArgs)
+	// base must not be mutated.
+	if len(base.Args) != 2 {
+		t.Errorf("base mutated: %v", base.Args)
 	}
 }

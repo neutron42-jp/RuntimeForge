@@ -400,13 +400,10 @@ func TestModelSettingsLifecycle(t *testing.T) {
 	s, _, _ := newTestServer(t)
 
 	rec := doJSON(t, s, http.MethodPut, "/api/v1/models/m1/settings", map[string]any{
-		"context_size": float64(8192),
-		"cache_type_k": "q8_0",
-		"cache_type_v": "q4_0",
-		"gpu_layers":   "99",
-		"threads":      float64(6),
-		"cpu_range":    "0-5",
-		"extra_args":   []string{"--flash-attn"},
+		"args": []map[string]any{
+			{"name": "-c", "value": "8192"},
+			{"name": "--flash-attn", "value": "on"},
+		},
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("put status = %d body=%s", rec.Code, rec.Body.String())
@@ -424,11 +421,13 @@ func TestModelSettingsLifecycle(t *testing.T) {
 	if !got.HasSaved {
 		t.Error("has_saved = false")
 	}
-	if got.Saved["cache_type_k"] != "q8_0" {
-		t.Errorf("saved cache_type_k = %v", got.Saved["cache_type_k"])
+	savedArgs, _ := got.Saved["args"].([]any)
+	if len(savedArgs) != 2 {
+		t.Errorf("saved args = %v", got.Saved["args"])
 	}
-	if got.Effective["context_size"].(float64) != 8192 {
-		t.Errorf("effective context_size = %v", got.Effective["context_size"])
+	effArgs, _ := got.Effective["args"].([]any)
+	if len(effArgs) != 2 {
+		t.Errorf("effective args = %v", got.Effective["args"])
 	}
 
 	// DELETE clears it; effective falls back to defaults (0).

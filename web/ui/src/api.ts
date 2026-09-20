@@ -1,4 +1,5 @@
 import type {
+  Arg,
   Hardware,
   Instance,
   Job,
@@ -92,26 +93,8 @@ export const api = {
     ),
   scanModels: () =>
     req<{ count: number; errors: string[] | null }>('POST', '/api/v1/models/scan'),
-  loadModel: (
-    id: string,
-    body: {
-      runtime_id?: string
-      context_size?: number
-      gpu_layers?: string
-      threads?: number
-      cpu_range?: string
-      eval_batch_size?: number
-      flash_attn?: string
-      cache_type_k?: string
-      cache_type_v?: string
-      kv_cache_offload?: string
-      load_mode?: string
-      seed?: number
-      rope_freq_base?: string
-      rope_freq_scale?: string
-      extra_args?: string[]
-    },
-  ) => req<Instance>('POST', `/api/v1/models/${encodeURIComponent(id)}/load`, body),
+  loadModel: (id: string, body: { runtime_id?: string; args?: Arg[] }) =>
+    req<Instance>('POST', `/api/v1/models/${encodeURIComponent(id)}/load`, body),
   unloadModel: (id: string) =>
     req<void>('POST', `/api/v1/models/${encodeURIComponent(id)}/unload`),
 

@@ -1,13 +1,13 @@
-import { Component, Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Component, Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { api, formatBytes, openEvents } from './api'
 import type {
+  Arg,
   Instance,
   Job,
   Manifest,
   Model,
   ModelRoot,
-  ModelSettings,
   ModelSources,
   Selections,
   Source,
@@ -635,227 +635,59 @@ function Modal(props: { title: string; onClose: () => void; children: ReactNode 
   )
 }
 
-// --- Load parameter fields (shared between Config modal and Server tab)
+// --- Model argument editor (name / value rows) ----------------------
 
-interface ParamDraft {
-  context_size: string
-  gpu_layers: string
-  threads: string
-  cpu_range: string
-  eval_batch_size: string
-  flash_attn: string
-  cache_type_k: string
-  cache_type_v: string
-  kv_cache_offload: string
-  load_mode: string
-  seed: string
-  rope_freq_base: string
-  rope_freq_scale: string
-  extra_args: string
-}
-
-function emptyDraft(): ParamDraft {
-  return {
-    context_size: '',
-    gpu_layers: '',
-    threads: '',
-    cpu_range: '',
-    eval_batch_size: '',
-    flash_attn: '',
-    cache_type_k: '',
-    cache_type_v: '',
-    kv_cache_offload: '',
-    load_mode: '',
-    seed: '',
-    rope_freq_base: '',
-    rope_freq_scale: '',
-    extra_args: '',
-  }
-}
-
-function draftToParams(d: ParamDraft): ModelSettings {
-  return {
-    context_size: d.context_size ? Number(d.context_size) : 0,
-    gpu_layers: d.gpu_layers,
-    threads: d.threads ? Number(d.threads) : 0,
-    cpu_range: d.cpu_range,
-    eval_batch_size: d.eval_batch_size ? Number(d.eval_batch_size) : 0,
-    flash_attn: d.flash_attn,
-    cache_type_k: d.cache_type_k,
-    cache_type_v: d.cache_type_v,
-    kv_cache_offload: d.kv_cache_offload,
-    load_mode: d.load_mode,
-    seed: d.seed ? Number(d.seed) : 0,
-    rope_freq_base: d.rope_freq_base,
-    rope_freq_scale: d.rope_freq_scale,
-    extra_args: d.extra_args.trim() ? splitArgs(d.extra_args) : [],
-  }
-}
-
-// mergeDraft folds only the typed (non-blank) draft fields into an
-// existing saved settings object.
-function mergeDraft(saved: ModelSettings, d: ParamDraft): ModelSettings {
-  const out: Record<string, unknown> = { ...saved }
-  const p = draftToParams(d) as unknown as Record<string, unknown>
-  for (const [k, v] of Object.entries(p)) {
-    if (Array.isArray(v)) {
-      if (v.length > 0) out[k] = v
-    } else if (v !== '' && v !== 0) {
-      out[k] = v
-    }
-  }
-  return out as ModelSettings
-}
-
-const ph = (v: string | number | undefined, fallback = 'default') =>
-  v === undefined || v === '' || v === 0 ? fallback : `saved: ${v}`
-
-function ParamsFields(props: {
-  draft: ParamDraft
-  eff: ModelSettings
-  onChange: (patch: Partial<ParamDraft>) => void
-}) {
-  const { draft, eff, onChange } = props
-  const tri = (v: string | undefined) => (v ? `saved: ${v}` : 'default')
-  return (
-    <>
-      <div className="section-title">Model</div>
-      <div className="form-grid">
-        <div>
-          <label>Context size (-c)</label>
-          <input value={draft.context_size} onChange={(e) => onChange({ context_size: e.target.value })} placeholder={ph(eff.context_size)} />
-        </div>
-        <div>
-          <label>GPU offload (-ngl)</label>
-          <input value={draft.gpu_layers} onChange={(e) => onChange({ gpu_layers: e.target.value })} placeholder={ph(eff.gpu_layers, 'max / 0 / N')} />
-        </div>
-        <div>
-          <label>CPU threads (-t)</label>
-          <input value={draft.threads} onChange={(e) => onChange({ threads: e.target.value })} placeholder={ph(eff.threads)} />
-        </div>
-        <div>
-          <label>Eval batch size (-b)</label>
-          <input value={draft.eval_batch_size} onChange={(e) => onChange({ eval_batch_size: e.target.value })} placeholder={ph(eff.eval_batch_size)} />
-        </div>
-      </div>
-
-      <div className="section-title">Attention &amp; KV cache</div>
-      <div className="form-grid">
-        <div>
-          <label>Flash attention (--flash-attn)</label>
-          <select value={draft.flash_attn} onChange={(e) => onChange({ flash_attn: e.target.value })}>
-            <option value="">{tri(eff.flash_attn)}</option>
-            <option value="on">on</option>
-            <option value="off">off</option>
-            <option value="auto">auto</option>
-          </select>
-        </div>
-        <div>
-          <label>KV cache K (--cache-type-k)</label>
-          <select value={draft.cache_type_k} onChange={(e) => onChange({ cache_type_k: e.target.value })}>
-            <option value="">{tri(eff.cache_type_k)}</option>
-            {KV_CACHE_TYPES.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label>KV cache V (--cache-type-v)</label>
-          <select value={draft.cache_type_v} onChange={(e) => onChange({ cache_type_v: e.target.value })}>
-            <option value="">{tri(eff.cache_type_v)}</option>
-            {KV_CACHE_TYPES.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label>Offload KV cache to GPU</label>
-          <select value={draft.kv_cache_offload} onChange={(e) => onChange({ kv_cache_offload: e.target.value })}>
-            <option value="">{tri(eff.kv_cache_offload)}</option>
-            <option value="on">on</option>
-            <option value="off">off</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="section-title">Memory &amp; misc</div>
-      <div className="form-grid">
-        <div>
-          <label>Model load mode (--load-mode)</label>
-          <select value={draft.load_mode} onChange={(e) => onChange({ load_mode: e.target.value })}>
-            <option value="">{tri(eff.load_mode)}</option>
-            <option value="auto">auto</option>
-            <option value="mmap">mmap</option>
-            <option value="none">none</option>
-            <option value="mlock">mlock</option>
-            <option value="mmap+mlock">mmap+mlock</option>
-          </select>
-        </div>
-        <div>
-          <label>Seed (--seed)</label>
-          <input value={draft.seed} onChange={(e) => onChange({ seed: e.target.value })} placeholder={ph(eff.seed)} />
-        </div>
-        <div>
-          <label>CPU range (--cpu-range)</label>
-          <input value={draft.cpu_range} onChange={(e) => onChange({ cpu_range: e.target.value })} placeholder={ph(eff.cpu_range, 'e.g. 0-7')} />
-        </div>
-        <div>
-          <label>RoPE freq base (--rope-freq-base)</label>
-          <input value={draft.rope_freq_base} onChange={(e) => onChange({ rope_freq_base: e.target.value })} placeholder={ph(eff.rope_freq_base)} />
-        </div>
-        <div>
-          <label>RoPE freq scale (--rope-freq-scale)</label>
-          <input value={draft.rope_freq_scale} onChange={(e) => onChange({ rope_freq_scale: e.target.value })} placeholder={ph(eff.rope_freq_scale)} />
-        </div>
-      </div>
-
-      <div className="section-title">Extra llama.cpp arguments</div>
-      <div className="form-grid">
-        <div style={{ gridColumn: '1 / -1' }}>
-          <textarea
-            className="mono"
-            style={{ width: '100%', minHeight: 56 }}
-            value={draft.extra_args}
-            onChange={(e) => onChange({ extra_args: e.target.value })}
-            placeholder={eff.extra_args && eff.extra_args.length ? `saved: ${eff.extra_args.join(' ')}` : '--no-webui'}
-            spellCheck={false}
-          />
-        </div>
-      </div>
-    </>
-  )
-}
+type ArgDraft = { id: number; name: string; value: string }
 
 function ModelSettingsForm(props: {
   model: Model
   onClose: () => void
   notify: (msg: string, error?: boolean) => void
 }) {
-  const [eff, setEff] = useState<ModelSettings>({})
   const [saved, setSaved] = useState(false)
-  const [draft, setDraft] = useState<ParamDraft>(emptyDraft())
+  const [defaults, setDefaults] = useState<Arg[]>([])
+  const nextID = useRef(1)
+  const blank = (): ArgDraft => ({ id: nextID.current++, name: '', value: '' })
+  const [rows, setRows] = useState<ArgDraft[]>(() => [blank()])
+
+  const splitDefaults = (eff: Arg[], savedCount: number) =>
+    eff.slice(0, Math.max(0, eff.length - savedCount))
 
   useEffect(() => {
     api
       .modelSettings(props.model.id)
       .then((r) => {
-        setEff(r.effective ?? {})
+        const savedArgs = r.saved?.args ?? []
         setSaved(r.has_saved)
+        setDefaults(splitDefaults(r.effective?.args ?? [], savedArgs.length))
+        setRows(
+          savedArgs.length
+            ? savedArgs.map((a) => ({ id: nextID.current++, name: a.name, value: a.value }))
+            : [blank()],
+        )
       })
       .catch(() => undefined)
   }, [props.model.id])
 
-  const onChange = (patch: Partial<ParamDraft>) => setDraft((d) => ({ ...d, ...patch }))
+  const update = (i: number, patch: Partial<ArgDraft>) =>
+    setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+  const add = () => setRows((rs) => [...rs, blank()])
+  const remove = (i: number) =>
+    setRows((rs) => {
+      const next = rs.filter((_, j) => j !== i)
+      return next.length ? next : [blank()]
+    })
+
+  const collect = () =>
+    rows.map((r) => ({ name: r.name.trim(), value: r.value })).filter((a) => a.name !== '')
 
   const save = async () => {
     try {
-      const current = await api.modelSettings(props.model.id)
-      const merged = mergeDraft(current.saved ?? {}, draft)
-      const res = await api.saveModelSettings(props.model.id, merged)
+      const args = collect()
+      const res = await api.saveModelSettings(props.model.id, { args })
       setSaved(true)
-      setEff(res.effective ?? {})
-      setDraft(emptyDraft())
-      props.notify('Saved model settings')
+      setDefaults(splitDefaults(res.effective?.args ?? [], args.length))
+      props.notify('Saved model arguments')
     } catch (e) {
       props.notify(String(e), true)
     }
@@ -864,11 +696,11 @@ function ModelSettingsForm(props: {
   const clear = async () => {
     try {
       await api.clearModelSettings(props.model.id)
-      setSaved(false)
       const r = await api.modelSettings(props.model.id)
-      setEff(r.effective ?? {})
-      setDraft(emptyDraft())
-      props.notify('Cleared saved settings')
+      setSaved(false)
+      setDefaults(r.effective?.args ?? [])
+      setRows([blank()])
+      props.notify('Cleared saved arguments')
     } catch (e) {
       props.notify(String(e), true)
     }
@@ -876,11 +708,51 @@ function ModelSettingsForm(props: {
 
   return (
     <div>
-      <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
-        Saved per model, applied when the model is loaded from the <strong>Server</strong> tab. Blank fields
-        use the global default.
+      <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+        llama.cpp arguments passed to <span className="mono">llama-server</span> after the model path. A value may
+        be empty for a standalone flag, and may hold several space-separated (or &quot;quoted&quot;) tokens. Applied
+        when the model is loaded from the <strong>Server</strong> tab.
       </div>
-      <ParamsFields draft={draft} eff={eff} onChange={onChange} />
+
+      <div className="arg-rows">
+        <div className="arg-row arg-head">
+          <span>Argument</span>
+          <span>Value</span>
+          <span />
+        </div>
+        {rows.map((r, i) => (
+          <div className="arg-row" key={r.id}>
+            <input
+              className="mono"
+              value={r.name}
+              onChange={(e) => update(i, { name: e.target.value })}
+              placeholder="--no-webui"
+              spellCheck={false}
+            />
+            <input
+              className="mono"
+              value={r.value}
+              onChange={(e) => update(i, { value: e.target.value })}
+              placeholder="8192"
+              spellCheck={false}
+            />
+            <button className="arg-del" title="Remove argument" onClick={() => remove(i)}>
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="row" style={{ marginTop: 8 }}>
+        <button onClick={add}>+ Add argument</button>
+      </div>
+
+      {defaults.length > 0 && (
+        <div className="muted mono" style={{ fontSize: 11, marginTop: 10 }}>
+          global defaults: {defaults.map((a) => [a.name, a.value].filter(Boolean).join(' ')).join(' ')}
+        </div>
+      )}
+
       <div className="row" style={{ marginTop: 14 }}>
         <button className="primary" onClick={save}>
           Save
@@ -899,16 +771,6 @@ function ModelSettingsForm(props: {
     </div>
   )
 }
-
-function splitArgs(s: string): string[] {
-  const out: string[] = []
-  const re = /"([^"]*)"|'([^']*)'|(\S+)/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(s)) !== null) out.push(m[1] ?? m[2] ?? m[3])
-  return out
-}
-
-const KV_CACHE_TYPES = ['f32', 'f16', 'bf16', 'q8_0', 'q5_1', 'q5_0', 'q4_1', 'q4_0', 'iq4_nl']
 
 // --- Server / load ---------------------------------------------------
 

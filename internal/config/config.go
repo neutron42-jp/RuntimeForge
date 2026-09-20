@@ -18,6 +18,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"runtimeforge/internal/appdir"
+	"runtimeforge/internal/supervisor"
 )
 
 // Backend holds per-backend build overrides. Empty CC/CXX inherit the
@@ -51,23 +52,11 @@ type Runtime struct {
 	AutoSelect          bool     `json:"auto_select" toml:"auto_select"`
 }
 
-// LoadConfig holds default llama-server launch parameters (SPEC §6).
-// The fields mirror LM Studio's per-model load settings.
+// LoadConfig holds default llama-server launch arguments (SPEC §6).
+// They are passed through to llama-server after the model path and bind
+// address, and are overridden by per-model arguments.
 type LoadConfig struct {
-	ExtraArgs      []string `json:"extra_args" toml:"extra_args"`
-	GPULayers      string   `json:"gpu_layers" toml:"gpu_layers"`
-	Threads        int      `json:"threads" toml:"threads"`
-	ContextSize    int      `json:"context_size" toml:"context_size"`
-	EvalBatchSize  int      `json:"eval_batch_size" toml:"eval_batch_size"`
-	FlashAttn      string   `json:"flash_attn" toml:"flash_attn"`
-	KVCacheTypeK   string   `json:"cache_type_k" toml:"cache_type_k"`
-	KVCacheTypeV   string   `json:"cache_type_v" toml:"cache_type_v"`
-	KVCacheOffload string   `json:"kv_cache_offload" toml:"kv_cache_offload"`
-	LoadMode       string   `json:"load_mode" toml:"load_mode"`
-	Seed           int      `json:"seed" toml:"seed"`
-	RopeFreqBase   string   `json:"rope_freq_base" toml:"rope_freq_base"`
-	RopeFreqScale  string   `json:"rope_freq_scale" toml:"rope_freq_scale"`
-	CPURange       string   `json:"cpu_range" toml:"cpu_range"`
+	Args supervisor.Args `json:"args" toml:"args"`
 }
 
 // Server holds HTTP server defaults.

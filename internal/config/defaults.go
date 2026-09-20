@@ -51,26 +51,10 @@ extra_configure_args = []
 extra_build_args = []
 
 [load]
-extra_args = []
-gpu_layers = ""
-threads = 0
-context_size = 0
-# Number of input tokens processed per batch (-b)
-eval_batch_size = 0
-# Flash attention: "" (auto), "on", "off"
-flash_attn = ""
-# KV cache quantization, e.g. "f16", "q8_0", "q4_0"
-cache_type_k = ""
-cache_type_v = ""
-# Offload the KV cache to GPU memory: "" (on), "on", "off"
-kv_cache_offload = ""
-# Model load mode: "" (auto), "none", "mmap", "mlock", "mmap+mlock"
-load_mode = ""
-seed = 0
-rope_freq_base = ""
-rope_freq_scale = ""
-# CPU affinity range, e.g. "0-7" (llama-server --cpu-range)
-cpu_range = ""
+# Default llama-server arguments, passed after the model path and bind
+# address. Each entry is a name/value pair; value may be empty for a
+# standalone flag. Per-model arguments are appended after these.
+args = []
 
 [models]
 scan_dirs = []

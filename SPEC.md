@@ -168,21 +168,13 @@ cxx = ""
 cmake_defines = {}
 
 [load]
-# すべてのモデルに適用される llama-server 既定引数（LM Studio のモデル別設定相当）
-extra_args = []
-gpu_layers = ""          # -ngl (GPU/CPU オフロード)
-threads = 0              # -t (CPU コア数)
-context_size = 0         # -c
-eval_batch_size = 0      # -b (評価バッチサイズ)
-flash_attn = ""          # --flash-attn ("" = auto / "on" / "off" / "auto")
-cache_type_k = ""        # --cache-type-k (KVキャッシュ量子化)
-cache_type_v = ""        # --cache-type-v
-kv_cache_offload = ""    # "" = GPU にオフロード / "off" で --no-kv-offload
-load_mode = ""           # --load-mode (auto/none/mmap/mlock/mmap+mlock)
-seed = 0                 # --seed
-rope_freq_base = ""      # --rope-freq-base
-rope_freq_scale = ""     # --rope-freq-scale
-cpu_range = ""           # --cpu-range (例 "0-7")
+# すべてのモデルに適用される llama-server 既定引数。
+# 各要素は name/value の組。value は空（フラグ単体）でも可。
+args = [
+  # { name = "-c", value = "4096" },
+  # { name = "--flash-attn", value = "on" },
+  # { name = "--no-webui", value = "" },
+]
 
 [models]
 scan_dirs = ["~/.runtimeforge/models"]
@@ -281,19 +273,17 @@ nvcc  = ""
   `general.size_label`。量子化名はファイル名から抽出（`file_type` はバージョン間で
   ずれるため）
 - 明示ロードのみ（JIT/自動ロードなし）。UI または API からロード/アンロード
-- **モデル個別のロード設定**を保存可能（`state/model_settings.json`、モデルID単位）。
-  LM Studio のモデル別ロード設定に相当する項目を GUI（Models タブの `Config` モーダル）で編集:
-  Context `-c`、GPUオフロード `-ngl`、CPUスレッド `-t`、評価バッチ `-b`、Flash Attention
-  `--flash-attn`、KVキャッシュ量子化 `--cache-type-k/-v`、**KVキャッシュのGPUオフロード**
-  (`--no-kv-offload`)、**ロードモード** `--load-mode`（auto/none/mmap/mlock/mmap+mlock）、
-  Seed `--seed`、RoPE `--rope-freq-base/-scale`、CPUアフィニティ `--cpu-range`、
-  および**任意のllama.cpp引数をそのまま追記**（`extra_args`）。グローバル既定（`[load]`）に
-  モデル個別設定を重ね、ロード時の上書きが最優先。空欄の項目は保存値/既定を使用
+- **モデル個別のロード引数**を保存可能（`state/model_settings.json`、モデルID単位）。
+  GUI（Models タブの `Config` モーダル）で llama.cpp 引数を **引数名 / 値 / 削除** の行として
+  自由に追加・削除できる。値は空（フラグ単体）でもよく、空白区切りの複数トークン
+  （`"..."` でクォート）は複数の argv に展開される。`-m` / `--host` / `--port` はアプリが
+  付与するため記述不要。グローバル既定（`[load].args`）の後ろにモデル個別の引数が追記され、
+  ロード時リクエストの引数が最後に来る（同名フラグは後勝ち）。
 
 ## 13. モデルスーパーバイザ
 
 - 選択されたランタイムの `llama-server` を内部ポートで起動し、PID/ポート/状態を管理
-- 起動引数は「モデル別設定 → グローバル既定」をマージして生成し、実効コマンドを UI に表示
+- 起動引数は「グローバル既定 → モデル別引数 → ロード時引数」を連結して生成し、実効コマンドを UI に表示
 - アンロード・デーモン終了時に子プロセスを確実に停止
 - クラッシュ検知とログ収集
 

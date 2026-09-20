@@ -153,6 +153,13 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; padding: 12px 0; }
 label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
 
+.arg-rows { display: flex; flex-direction: column; gap: 4px; max-height: 340px; overflow-y: auto; }
+.arg-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) 30px; gap: 6px; align-items: center; }
+.arg-row.arg-head { font-size: 11px; color: var(--muted); }
+.arg-row input { width: 100%; }
+.arg-del { padding: 5px 0; line-height: 1; color: var(--muted); }
+.arg-del:hover { color: var(--bad); border-color: rgba(248, 81, 73, .4); }
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

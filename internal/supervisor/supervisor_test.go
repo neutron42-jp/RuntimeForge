@@ -253,42 +253,42 @@ func TestSetPortRange(t *testing.T) {
 	}
 }
 
-func TestBuildArgsKVAndCPU(t *testing.T) {
+func TestBuildArgsManual(t *testing.T) {
 	s := spec()
-	s.Params = Params{
-		ContextSize:    8192,
-		EvalBatchSize:  512,
-		FlashAttn:      "on",
-		KVCacheTypeK:   "q8_0",
-		KVCacheTypeV:   "q4_0",
-		KVCacheOffload: "off",
-		LoadMode:       "mmap+mlock",
-		Seed:           42,
-		RopeFreqBase:   "10000",
-		RopeFreqScale:  "0.5",
-		GPULayers:      "99",
-		Threads:        8,
-		CPURange:       "0-7",
-		ExtraArgs:      []string{"--no-webui"},
-	}
+	s.Params = Params{Args: Args{
+		{Name: "-c", Value: "8192"},
+		{Name: "--flash-attn", Value: "on"},
+		{Name: "-ngl", Value: "-1"},
+		{Name: "--lora", Value: "/models/a.lora /models/b.lora"},
+		{Name: "--alias", Value: `"my model"`},
+		{Name: "--no-webui"},
+		{Name: "", Value: "ignored"},
+	}}
 	args := BuildArgs(s, 21000)
-	joined := strings.Join(args, " ")
-	for _, want := range []string{
-		"-c 8192", "-b 512", "--flash-attn on",
-		"--cache-type-k q8_0", "--cache-type-v q4_0",
-		"--no-kv-offload", "--load-mode mmap+mlock", "--seed 42",
-		"--rope-freq-base 10000", "--rope-freq-scale 0.5",
-		"-ngl 99", "-t 8", "--cpu-range 0-7", "--no-webui",
-	} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("args missing %q: %v", want, args)
+	want := []string{
+		"-m", "/models/test.gguf", "--host", "127.0.0.1", "--port", "21000",
+		"-c", "8192", "--flash-attn", "on", "-ngl", "-1",
+		"--lora", "/models/a.lora", "/models/b.lora",
+		"--alias", "my model", "--no-webui",
+	}
+	if len(args) != len(want) {
+		t.Fatalf("args = %v, want %v", args, want)
+	}
+	for i := range want {
+		if args[i] != want[i] {
+			t.Errorf("arg[%d] = %q, want %q", i, args[i], want[i])
 		}
 	}
 }
 
 func TestBuildArgs(t *testing.T) {
 	s := spec()
-	s.Params = Params{ContextSize: 8192, GPULayers: "99", Threads: 8, ExtraArgs: []string{"--no-webui"}}
+	s.Params = Params{Args: Args{
+		{Name: "-c", Value: "8192"},
+		{Name: "-ngl", Value: "99"},
+		{Name: "-t", Value: "8"},
+		{Name: "--no-webui"},
+	}}
 	args := BuildArgs(s, 21000)
 	want := []string{
 		"-m", "/models/test.gguf", "--host", "127.0.0.1", "--port", "21000",

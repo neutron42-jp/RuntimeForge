@@ -1,6 +1,5 @@
-// Package loadsettings persists per-model llama-server launch parameters
-// (context size, KV cache quantization, GPU/CPU offload, threads), keyed
-// by the stable model id (SPEC §12).
+// Package loadsettings persists per-model llama-server launch arguments,
+// keyed by the stable model id (SPEC §12).
 package loadsettings
 
 import (
@@ -103,50 +102,11 @@ func (s *Store) save() error {
 	return os.Rename(tmp, s.path)
 }
 
-// Merge overlays non-zero fields of over onto base.
+// Merge appends the model's arguments after the base ones.
 func Merge(base, over supervisor.Params) supervisor.Params {
 	out := base
-	if over.ContextSize != 0 {
-		out.ContextSize = over.ContextSize
-	}
-	if over.KVCacheTypeK != "" {
-		out.KVCacheTypeK = over.KVCacheTypeK
-	}
-	if over.KVCacheTypeV != "" {
-		out.KVCacheTypeV = over.KVCacheTypeV
-	}
-	if over.GPULayers != "" {
-		out.GPULayers = over.GPULayers
-	}
-	if over.Threads != 0 {
-		out.Threads = over.Threads
-	}
-	if over.CPURange != "" {
-		out.CPURange = over.CPURange
-	}
-	if over.EvalBatchSize != 0 {
-		out.EvalBatchSize = over.EvalBatchSize
-	}
-	if over.FlashAttn != "" {
-		out.FlashAttn = over.FlashAttn
-	}
-	if over.KVCacheOffload != "" {
-		out.KVCacheOffload = over.KVCacheOffload
-	}
-	if over.LoadMode != "" {
-		out.LoadMode = over.LoadMode
-	}
-	if over.Seed != 0 {
-		out.Seed = over.Seed
-	}
-	if over.RopeFreqBase != "" {
-		out.RopeFreqBase = over.RopeFreqBase
-	}
-	if over.RopeFreqScale != "" {
-		out.RopeFreqScale = over.RopeFreqScale
-	}
-	if len(over.ExtraArgs) > 0 {
-		out.ExtraArgs = append(append([]string(nil), base.ExtraArgs...), over.ExtraArgs...)
+	if len(over.Args) > 0 {
+		out.Args = append(append(supervisor.Args(nil), base.Args...), over.Args...)
 	}
 	return out
 }

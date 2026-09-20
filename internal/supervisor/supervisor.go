@@ -34,23 +34,62 @@ const (
 	StateStopped State = "stopped"
 )
 
-// Params are llama-server launch parameters, all user overridable.
-// The set mirrors LM Studio's per-model load settings.
+// Arg is one manually specified llama-server argument. Value may be
+// empty for a standalone flag (e.g. --no-webui) and may hold several
+// whitespace-separated tokens that expand to multiple argv entries
+// (double quotes preserve a token containing spaces).
+type Arg struct {
+	Name  string `json:"name" toml:"name"`
+	Value string `json:"value" toml:"value"`
+}
+
+// Args are the manual llama-server arguments for a load.
+type Args []Arg
+
+// Flatten expands the arguments into an argv slice. Entries with an
+// empty name are ignored.
+func (a Args) Flatten() []string {
+	var out []string
+	for _, arg := range a {
+		if arg.Name == "" {
+			continue
+		}
+		out = append(out, arg.Name)
+		out = append(out, splitValue(arg.Value)...)
+	}
+	return out
+}
+
+// splitValue splits a value into argv tokens on whitespace, honoring
+// double quotes.
+func splitValue(s string) []string {
+	var out []string
+	var b strings.Builder
+	inQuote := false
+	flush := func() {
+		if b.Len() > 0 {
+			out = append(out, b.String())
+			b.Reset()
+		}
+	}
+	for _, r := range s {
+		switch {
+		case r == '"':
+			inQuote = !inQuote
+		case (r == ' ' || r == '\t' || r == '\n') && !inQuote:
+			flush()
+		default:
+			b.WriteRune(r)
+		}
+	}
+	flush()
+	return out
+}
+
+// Params are llama-server launch parameters. Everything beyond the
+// model path and bind address is passed through as manual arguments.
 type Params struct {
-	ContextSize    int      `json:"context_size,omitempty"`
-	GPULayers      string   `json:"gpu_layers,omitempty"`
-	Threads        int      `json:"threads,omitempty"`
-	CPURange       string   `json:"cpu_range,omitempty"`
-	EvalBatchSize  int      `json:"eval_batch_size,omitempty"`
-	FlashAttn      string   `json:"flash_attn,omitempty"`   // on|off|auto
-	KVCacheTypeK   string   `json:"cache_type_k,omitempty"` // f16|q8_0|q4_0|...
-	KVCacheTypeV   string   `json:"cache_type_v,omitempty"`
-	KVCacheOffload string   `json:"kv_cache_offload,omitempty"` // on|off (GPU offload of KV cache)
-	LoadMode       string   `json:"load_mode,omitempty"`        // auto|none|mmap|mlock|mmap+mlock
-	Seed           int      `json:"seed,omitempty"`
-	RopeFreqBase   string   `json:"rope_freq_base,omitempty"`
-	RopeFreqScale  string   `json:"rope_freq_scale,omitempty"`
-	ExtraArgs      []string `json:"extra_args,omitempty"`
+	Args Args `json:"args,omitempty"`
 }
 
 // LoadSpec fully describes a load request.
@@ -463,54 +502,16 @@ func (s *Supervisor) allocatePort() (int, error) {
 	return 0, errors.New("no free port available in the configured range")
 }
 
-// BuildArgs constructs the llama-server argv from a spec.
+// BuildArgs constructs the llama-server argv from a spec. The model
+// path and bind address always come first; the user's manual arguments
+// follow so they can override the defaults.
 func BuildArgs(spec LoadSpec, port int) []string {
 	args := []string{
 		"-m", spec.ModelPath,
 		"--host", "127.0.0.1",
 		"--port", strconv.Itoa(port),
 	}
-	if spec.Params.ContextSize > 0 {
-		args = append(args, "-c", strconv.Itoa(spec.Params.ContextSize))
-	}
-	if spec.Params.FlashAttn != "" {
-		args = append(args, "--flash-attn", spec.Params.FlashAttn)
-	}
-	if spec.Params.KVCacheTypeK != "" {
-		args = append(args, "--cache-type-k", spec.Params.KVCacheTypeK)
-	}
-	if spec.Params.KVCacheTypeV != "" {
-		args = append(args, "--cache-type-v", spec.Params.KVCacheTypeV)
-	}
-	if spec.Params.GPULayers != "" {
-		args = append(args, "-ngl", spec.Params.GPULayers)
-	}
-	if spec.Params.Threads > 0 {
-		args = append(args, "-t", strconv.Itoa(spec.Params.Threads))
-	}
-	if spec.Params.CPURange != "" {
-		args = append(args, "--cpu-range", spec.Params.CPURange)
-	}
-	if spec.Params.EvalBatchSize > 0 {
-		args = append(args, "-b", strconv.Itoa(spec.Params.EvalBatchSize))
-	}
-	if strings.EqualFold(spec.Params.KVCacheOffload, "off") {
-		args = append(args, "--no-kv-offload")
-	}
-	if spec.Params.LoadMode != "" {
-		args = append(args, "--load-mode", spec.Params.LoadMode)
-	}
-	if spec.Params.Seed != 0 {
-		args = append(args, "--seed", strconv.Itoa(spec.Params.Seed))
-	}
-	if spec.Params.RopeFreqBase != "" {
-		args = append(args, "--rope-freq-base", spec.Params.RopeFreqBase)
-	}
-	if spec.Params.RopeFreqScale != "" {
-		args = append(args, "--rope-freq-scale", spec.Params.RopeFreqScale)
-	}
-	args = append(args, spec.Params.ExtraArgs...)
-	return args
+	return append(args, spec.Params.Args.Flatten()...)
 }
 
 func defaultHealthCheck(ctx context.Context, port int) error {
