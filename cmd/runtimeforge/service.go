@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"runtimeforge/internal/appdir"
+	"runtimeforge/internal/hardware"
 )
 
 func pidFilePath(p appdir.Paths) string { return p.StateFile("runtimeforge.pid") }
@@ -115,10 +116,77 @@ ExecStart=%s serve
 Restart=on-failure
 RestartSec=3
 Environment=RUNTIMEFORGE_HOME=%s
+Environment="PATH=%s"
 
 [Install]
 WantedBy=default.target
 `
+
+// serviceSearchPath builds an explicit PATH for the systemd unit. The
+// user manager's environment at boot does not include tools installed
+// outside the default PATH (e.g. the CUDA toolkit), which the login
+// session imports only later.
+func serviceSearchPath() string {
+	var parts []string
+	if home, err := os.UserHomeDir(); err == nil {
+		parts = append(parts, filepath.Join(home, ".local", "bin"))
+	}
+	parts = append(parts, hardware.ToolDirs()...)
+	parts = append(parts, "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin")
+
+	seen := map[string]bool{}
+	var out []string
+	for _, p := range parts {
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	return strings.Join(out, ":")
+}
+
+// systemdUnitName derives the running .service unit name from the cgroup
+// path. It reports false when the process is not managed by systemd.
+func systemdUnitName() (string, bool) {
+	if os.Getenv("INVOCATION_ID") == "" && os.Getenv("SYSTEMD_EXEC_PID") == "" {
+		return "", false
+	}
+	if data, err := os.ReadFile("/proc/self/cgroup"); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimRight(line, " \t\r")
+			if i := strings.LastIndex(line, "/"); i >= 0 {
+				if name := line[i+1:]; strings.HasSuffix(name, ".service") {
+					return name, true
+				}
+			}
+		}
+	}
+	return "runtimeforge.service", true
+}
+
+// restartService restarts our own systemd user unit. The job is queued
+// with --no-block, so it still runs after stopping the unit kills this
+// process.
+func restartService() error {
+	unit, ok := systemdUnitName()
+	if !ok {
+		return errors.New("not managed by systemd; restart RuntimeForge manually")
+	}
+	out, err := exec.Command("systemctl", "--user", "restart", "--no-block", unit).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("systemctl restart %s: %w: %s", unit, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// restartAvailable reports why a restart cannot be scheduled.
+func restartAvailable() error {
+	if _, ok := systemdUnitName(); !ok {
+		return errors.New("not managed by systemd; restart RuntimeForge manually")
+	}
+	return nil
+}
 
 // cmdInstallSystemd writes systemd user units for the daemon.
 func cmdInstallSystemd(args []string) error {
@@ -138,7 +206,7 @@ func cmdInstallSystemd(args []string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	svc := fmt.Sprintf(systemdServiceUnit, exe, p.Root)
+	svc := fmt.Sprintf(systemdServiceUnit, exe, p.Root, serviceSearchPath())
 	svcPath := filepath.Join(dir, "runtimeforge.service")
 	if err := os.WriteFile(svcPath, []byte(svc), 0o644); err != nil {
 		return err

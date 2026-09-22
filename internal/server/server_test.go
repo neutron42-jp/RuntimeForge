@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -66,6 +67,9 @@ func newTestServer(t *testing.T) (*Server, appdir.Paths, config.Config) {
 			cur = next
 			return next, nil
 		},
+		RefreshHardware:  func() hardware.Report { return hardware.Report{} },
+		RestartAvailable: func() error { return nil },
+		RestartService:   func() error { return nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -481,5 +485,62 @@ func TestSelectInstance(t *testing.T) {
 	// Unknown is a 404.
 	if _, code, _ := selectInstance(instances, known, "ghost"); code != http.StatusNotFound {
 		t.Errorf("unknown code = %d", code)
+	}
+}
+
+func TestSystemRefresh(t *testing.T) {
+	refreshed := false
+	s, err := New(Deps{
+		RefreshHardware: func() hardware.Report {
+			refreshed = true
+			return hardware.Report{Backends: []string{"cuda", "cpu"}}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := doJSON(t, s, http.MethodPost, "/api/v1/system/refresh", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refresh status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !refreshed {
+		t.Error("RefreshHardware was not called")
+	}
+	if !strings.Contains(rec.Body.String(), "cuda") {
+		t.Errorf("body = %s", rec.Body.String())
+	}
+}
+
+func TestSystemRestart(t *testing.T) {
+	restarted := make(chan struct{}, 1)
+	s, err := New(Deps{
+		RestartAvailable: func() error { return nil },
+		RestartService:   func() error { restarted <- struct{}{}; return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := doJSON(t, s, http.MethodPost, "/api/v1/system/restart", nil)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("restart status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	select {
+	case <-restarted:
+	case <-time.After(2 * time.Second):
+		t.Error("RestartService was not called")
+	}
+}
+
+func TestSystemRestartUnavailable(t *testing.T) {
+	s, err := New(Deps{
+		RestartAvailable: func() error { return errors.New("not managed by systemd") },
+		RestartService:   func() error { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := doJSON(t, s, http.MethodPost, "/api/v1/system/restart", nil)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }

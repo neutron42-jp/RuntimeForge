@@ -44,6 +44,13 @@ type Deps struct {
 	// UpdateConfig merges a partial configuration and returns the new
 	// effective configuration.
 	UpdateConfig func(partial map[string]any) (config.Config, error)
+	// RefreshHardware re-runs host detection and returns a fresh report.
+	RefreshHardware func() hardware.Report
+	// RestartAvailable reports why the daemon cannot restart itself
+	// (nil means a restart can be scheduled).
+	RestartAvailable func() error
+	// RestartService schedules a restart of the daemon's systemd unit.
+	RestartService func() error
 	// AutoScan rescans configured model sources in the background on
 	// startup so the registry reflects files added since last run.
 	AutoScan bool
@@ -106,6 +113,8 @@ func (s *Server) routes(ui fs.FS) {
 
 	m.HandleFunc("GET /api/v1/health", s.handleHealth)
 	m.HandleFunc("GET /api/v1/system", s.handleSystem)
+	m.HandleFunc("POST /api/v1/system/refresh", s.handleSystemRefresh)
+	m.HandleFunc("POST /api/v1/system/restart", s.handleSystemRestart)
 	m.HandleFunc("GET /api/v1/config", s.handleConfig)
 	m.HandleFunc("PUT /api/v1/config", s.handleConfigPut)
 
@@ -167,6 +176,40 @@ func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 		"root":     s.deps.Paths.Root,
 		"hardware": s.hw(),
 	})
+}
+
+func (s *Server) handleSystemRefresh(w http.ResponseWriter, r *http.Request) {
+	if s.deps.RefreshHardware == nil {
+		writeError(w, http.StatusServiceUnavailable, "hardware refresh unavailable")
+		return
+	}
+	rep := s.deps.RefreshHardware()
+	s.broadcast("system", map[string]any{"hardware": rep})
+	writeJSON(w, http.StatusOK, map[string]any{"hardware": rep})
+}
+
+func (s *Server) handleSystemRestart(w http.ResponseWriter, r *http.Request) {
+	if s.deps.RestartService == nil {
+		writeError(w, http.StatusServiceUnavailable, "service restart unavailable")
+		return
+	}
+	if s.deps.RestartAvailable != nil {
+		if err := s.deps.RestartAvailable(); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"status": "restarting"})
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+	// Schedule the restart out of band: stopping our own unit would kill
+	// the handler before systemctl returns, so give the response a moment
+	// to reach the client first.
+	go func() {
+		time.Sleep(250 * time.Millisecond)
+		_ = s.deps.RestartService()
+	}()
 }
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {

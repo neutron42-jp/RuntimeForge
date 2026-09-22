@@ -37,6 +37,7 @@ export default function App() {
   const [config, setConfig] = useState<unknown>(null)
   const [logs, setLogs] = useState<Record<string, string[]>>({})
   const [serverLogs, setServerLogs] = useState<Record<string, string[]>>({})
+  const [restarting, setRestarting] = useState(false)
   const [toast, setToast] = useState<{ msg: string; error?: boolean } | null>(null)
 
   const notify = useCallback((msg: string, error = false) => {
@@ -60,6 +61,48 @@ export default function App() {
       notify(String((failed as PromiseRejectedResult).reason), true)
     }
   }, [notify])
+
+  const refreshEnvironment = useCallback(async () => {
+    try {
+      await api.refreshEnvironment()
+      notify('Environment re-detected')
+      void refresh()
+    } catch (e) {
+      notify(String(e), true)
+    }
+  }, [notify, refresh])
+
+  const restartService = useCallback(async () => {
+    if (restarting) return
+    if (!window.confirm('Restart RuntimeForge? Loaded models and running builds will be stopped.')) {
+      return
+    }
+    setRestarting(true)
+    try {
+      await api.restartService()
+    } catch (e) {
+      setRestarting(false)
+      notify(String(e), true)
+      return
+    }
+    notify('Restarting RuntimeForge…')
+    const deadline = Date.now() + 60000
+    const timer = window.setInterval(async () => {
+      try {
+        await api.health()
+        window.clearInterval(timer)
+        setRestarting(false)
+        notify('RuntimeForge restarted')
+        void refresh()
+      } catch {
+        if (Date.now() > deadline) {
+          window.clearInterval(timer)
+          setRestarting(false)
+          notify('RuntimeForge did not come back after the restart', true)
+        }
+      }
+    }, 1000)
+  }, [notify, refresh, restarting])
 
   useEffect(() => {
     void refresh()
@@ -134,7 +177,7 @@ export default function App() {
       <main className="main">
         <ErrorBoundary key={tab}>
         {tab === 'dashboard' && (
-          <Dashboard system={system} instances={instances} builds={builds} openaiURL={openaiURL} onUnload={async (id) => {
+          <Dashboard system={system} instances={instances} builds={builds} openaiURL={openaiURL} restarting={restarting} onRefreshEnv={refreshEnvironment} onRestart={restartService} onUnload={async (id) => {
             try {
               await api.unloadModel(id)
               notify(`Unloaded ${id}`)
@@ -233,7 +276,10 @@ function Dashboard(props: {
   instances: Instance[]
   builds: Job[]
   openaiURL: string
+  restarting: boolean
   onUnload: (id: string) => void
+  onRefreshEnv: () => void
+  onRestart: () => void
 }) {
   const hw = props.system?.hardware
   return (
@@ -302,6 +348,17 @@ function Dashboard(props: {
             <span className="path mono">{t.version || t.path}</span>
           </div>
         ))}
+      </div>
+      <div className="row" style={{ marginTop: 10 }}>
+        <button onClick={props.onRefreshEnv}>Re-detect environment</button>
+        <button className="danger" onClick={props.onRestart} disabled={props.restarting}>
+          {props.restarting ? 'Restarting…' : 'Restart service'}
+        </button>
+        {hw?.detected_at && (
+          <span className="muted mono" style={{ fontSize: 11 }}>
+            detected {new Date(hw.detected_at).toLocaleString()}
+          </span>
+        )}
       </div>
 
       <h2>Loaded models</h2>

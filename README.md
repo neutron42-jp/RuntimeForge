@@ -42,6 +42,9 @@ chosen per model automatically — no manual runtime switching.
 - **Live inference logs** — `llama-server` stdout/stderr is streamed to the UI.
 - **Fully overridable configuration** — built-in defaults, `config.toml`, `config.d/*.toml`,
   and per-source / per-backend / per-model / per-request overrides (including build arguments).
+- **Toolchain controls** — detect tools beyond `PATH` (well-known CUDA locations), re-run
+  detection from the Dashboard (`Re-detect environment`), and restart the daemon
+  (`Restart service`).
 - **Web UI + CLI + systemd user unit** (with optional socket activation).
 
 ## Requirements

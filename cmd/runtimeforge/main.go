@@ -235,16 +235,20 @@ func setupEngine(p appdir.Paths) (*build.Engine, *runtimes.Registry, *source.Man
 		return nil, nil, nil, config.Config{}, err
 	}
 	reg := runtimes.NewRegistry(p.Runtimes)
-	hw := detectHardware(cfg)
+	hw := newHardwareState(cfg)
 	eng := build.NewEngine(p, srcMgr, func() config.Config { return cfg }, hardware.ExecRunner{}, build.ExecRunner{})
-	eng.OnSuccess = makeBuildHook(reg, srcMgr, hw)
+	eng.OnSuccess = makeBuildHook(reg, srcMgr, hw.Get)
 	return eng, reg, srcMgr, cfg, nil
 }
 
-func makeBuildHook(reg *runtimes.Registry, srcMgr *source.Manager, hw hardware.Report) func(*build.Job, string) error {
-	gpus := make([]string, 0, len(hw.GPUs))
-	for _, g := range hw.GPUs {
-		gpus = append(gpus, g.Name)
+func makeBuildHook(reg *runtimes.Registry, srcMgr *source.Manager, hw func() hardware.Report) func(*build.Job, string) error {
+	gpus := func() []string {
+		rep := hw()
+		out := make([]string, 0, len(rep.GPUs))
+		for _, g := range rep.GPUs {
+			out = append(out, g.Name)
+		}
+		return out
 	}
 	return func(j *build.Job, srcDir string) error {
 		archs, err := runtimes.ExtractArchitectures(srcDir)
@@ -269,7 +273,7 @@ func makeBuildHook(reg *runtimes.Registry, srcMgr *source.Manager, hw hardware.R
 			BuiltAt:                time.Now().UTC(),
 			Binaries:               binaries,
 			SupportedArchitectures: archs,
-			HostGPUs:               gpus,
+			HostGPUs:               gpus(),
 		}
 		if j.Plan != nil {
 			m.ResolvedCMakeFlags = append([]string{"cmake"}, j.Plan.Configure...)
@@ -415,6 +419,33 @@ func detectHardware(cfg config.Config) hardware.Report {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	return hardware.Detect(ctx, hardware.ExecRunner{})
+}
+
+// hardwareState holds the latest detection report so it can be refreshed
+// at runtime (the daemon otherwise detects only once at startup).
+type hardwareState struct {
+	mu  sync.RWMutex
+	rep hardware.Report
+}
+
+func newHardwareState(cfg config.Config) *hardwareState {
+	return &hardwareState{rep: detectHardware(cfg)}
+}
+
+// Get returns the current report.
+func (h *hardwareState) Get() hardware.Report {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.rep
+}
+
+// Refresh re-runs detection and stores the result.
+func (h *hardwareState) Refresh(cfg config.Config) hardware.Report {
+	rep := detectHardware(cfg)
+	h.mu.Lock()
+	h.rep = rep
+	h.mu.Unlock()
+	return rep
 }
 
 func cmdGGUF(args []string) error {
@@ -618,7 +649,7 @@ func (c *cfgState) reload(p appdir.Paths) (config.Config, error) {
 
 func buildDeps(p appdir.Paths, state *cfgState) (server.Deps, func(), error) {
 	cfg := state.Get()
-	hw := detectHardware(cfg)
+	hw := newHardwareState(cfg)
 
 	srcMgr, err := source.NewManager(p.Sources, p.StateFile("sources.json"), source.ExecGit{})
 	if err != nil {
@@ -643,7 +674,7 @@ func buildDeps(p appdir.Paths, state *cfgState) (server.Deps, func(), error) {
 	}
 
 	eng := build.NewEngine(p, srcMgr, state.Get, hardware.ExecRunner{}, build.ExecRunner{})
-	eng.OnSuccess = makeBuildHook(rtReg, srcMgr, hw)
+	eng.OnSuccess = makeBuildHook(rtReg, srcMgr, hw.Get)
 
 	sup := supervisor.New(supervisor.Options{
 		Paths:     p,
@@ -659,18 +690,21 @@ func buildDeps(p appdir.Paths, state *cfgState) (server.Deps, func(), error) {
 	}
 
 	deps := server.Deps{
-		Paths:        p,
-		Config:       state.Get,
-		Hardware:     func() hardware.Report { return hw },
-		Sources:      srcMgr,
-		Builds:       eng,
-		Runtimes:     rtReg,
-		Models:       modelReg,
-		Selections:   selStore,
-		Settings:     settingsStore,
-		Supervisor:   sup,
-		UpdateConfig: updateConfig,
-		AutoScan:     true,
+		Paths:            p,
+		Config:           state.Get,
+		Hardware:         hw.Get,
+		Sources:          srcMgr,
+		Builds:           eng,
+		Runtimes:         rtReg,
+		Models:           modelReg,
+		Selections:       selStore,
+		Settings:         settingsStore,
+		Supervisor:       sup,
+		UpdateConfig:     updateConfig,
+		RefreshHardware:  func() hardware.Report { return hw.Refresh(state.Get()) },
+		RestartAvailable: restartAvailable,
+		RestartService:   restartService,
+		AutoScan:         true,
 	}
 	cleanup := func() { sup.Shutdown() }
 	return deps, cleanup, nil

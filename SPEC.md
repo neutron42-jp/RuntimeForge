@@ -245,6 +245,12 @@ nvcc  = ""
 - GPU: `nvidia-smi` / `lspci`、Vulkan: `vulkaninfo`
 - 静的優先順位（既定）: **CUDA > Vulkan > CPU**（§6 で変更可能）
 - 判定結果と利用可能デバイス一覧を `hardware.json` にキャッシュ、UI のダッシュボードに表示
+- 検出は起動時に1回。UI の **Re-detect environment** ボタン（`POST /api/v1/system/refresh`）で再検出できる
+- ツール探索は `PATH` のほか、CUDA の既知の設置先（`$CUDA_HOME/bin`、`/usr/local/cuda*/bin` など）も
+  フォールバック探索する。systemd user サービスは起動時にログイン環境を継承しないため、
+  `install-systemd` は生成するユニットに明示的な `PATH` を書き込む
+- **Restart service** ボタン（`POST /api/v1/system/restart`）で systemd ユニットを再起動できる
+  （systemd 管理下でのみ有効）
 - 将来拡張: `llama-bench` による実測モードを追加できるようインターフェースを分離
 
 ## 11. 選択エンジン（自動判定 + 手動オーバーライド）

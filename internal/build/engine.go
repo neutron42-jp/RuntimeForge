@@ -406,6 +406,16 @@ func (e *Engine) run(ctx context.Context, cancel context.CancelFunc, j *Job, req
 		fail(err.Error(), -1)
 		return
 	}
+	// CMake must find nvcc even when the daemon's PATH was inherited
+	// before the login environment (e.g. a systemd user service started
+	// at boot). Pass the resolved absolute path explicitly.
+	if containsBackend(req.BackendSet(), "cuda") && cfg.Toolchain.NVCC == "" {
+		if _, ok := plan.Defines["CMAKE_CUDA_COMPILER"]; !ok {
+			if nvcc, err := e.look.LookPath("nvcc"); err == nil {
+				plan.Configure = append(plan.Configure, "-DCMAKE_CUDA_COMPILER="+nvcc)
+			}
+		}
+	}
 	e.update(j.ID, func(j *Job) { j.Plan = &plan })
 	e.emitJob(j)
 

@@ -39,6 +39,9 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 export const api = {
   system: () => req<SystemInfo>('GET', '/api/v1/system'),
+  health: () => req<{ status: string; version: string }>('GET', '/api/v1/health'),
+  refreshEnvironment: () => req<{ hardware: Hardware }>('POST', '/api/v1/system/refresh'),
+  restartService: () => req<{ status: string }>('POST', '/api/v1/system/restart'),
   config: () => req<Config>('GET', '/api/v1/config'),
   updateConfig: (body: unknown) => req<Config>('PUT', '/api/v1/config', body),
 

@@ -3,6 +3,7 @@ package hardware
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -193,4 +194,34 @@ func hasAPI(apis []string, api string) bool {
 		}
 	}
 	return false
+}
+
+func TestLookPathFallsBackToCUDAHome(t *testing.T) {
+	home := t.TempDir()
+	bin := filepath.Join(home, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(bin, "rf-test-tool")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CUDA_HOME", home)
+	t.Setenv("CUDA_PATH", "")
+
+	got, err := LookPath("rf-test-tool")
+	if err != nil {
+		t.Fatalf("LookPath: %v", err)
+	}
+	if got != exe {
+		t.Errorf("path = %q, want %q", got, exe)
+	}
+}
+
+func TestLookPathMissing(t *testing.T) {
+	t.Setenv("CUDA_HOME", t.TempDir())
+	t.Setenv("CUDA_PATH", "")
+	if _, err := LookPath("rf-definitely-missing-tool"); err == nil {
+		t.Error("expected an error for a missing tool")
+	}
 }
