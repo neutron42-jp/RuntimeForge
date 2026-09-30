@@ -59,14 +59,7 @@ export const api = {
       backends?: string[]
       all?: boolean
       commit?: string
-      cmake_defines?: Record<string, string>
-      extra_configure_args?: string[]
-      extra_build_args?: string[]
-      cc?: string
-      cxx?: string
-      generator?: string
-      build_type?: string
-      parallel_jobs?: number
+      command?: string
     },
   ) => req<{ jobs: Job[] }>('POST', `/api/v1/sources/${encodeURIComponent(name)}/build`, body),
 

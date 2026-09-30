@@ -111,23 +111,18 @@ type Event struct {
 }
 
 // Request asks for a build of one or more backends compiled together
-// into a single runtime. The override fields (SPEC §6, build-job level)
-// take precedence over the saved configuration for this job only and are
-// all optional.
+// into a single runtime. When Command is set it is run as a shell line
+// (with `&&` chaining configure and build) instead of the generated
+// CMake plan, so any project layout can be built.
 type Request struct {
 	Source   string   `json:"source"`
 	Ref      string   `json:"ref,omitempty"`
 	Commit   string   `json:"commit,omitempty"`
 	Backends []string `json:"backends"`
-
-	CMakeDefines       map[string]string `json:"cmake_defines,omitempty"`
-	ExtraConfigureArgs []string          `json:"extra_configure_args,omitempty"`
-	ExtraBuildArgs     []string          `json:"extra_build_args,omitempty"`
-	CC                 string            `json:"cc,omitempty"`
-	CXX                string            `json:"cxx,omitempty"`
-	Generator          string            `json:"generator,omitempty"`
-	BuildType          string            `json:"build_type,omitempty"`
-	ParallelJobs       int               `json:"parallel_jobs,omitempty"`
+	// Command is an optional shell command run in BUILD_DIR with
+	// SOURCE_DIR/BUILD_DIR/INSTALL_DIR set in the environment. Built
+	// binaries must end up in BUILD_DIR/bin.
+	Command string `json:"command,omitempty"`
 }
 
 // BackendSet returns the normalized backend selection (defaults to cpu).
@@ -137,45 +132,6 @@ func (r Request) BackendSet() []string {
 		return []string{"cpu"}
 	}
 	return set
-}
-
-// Overrides reports whether any build-argument override is present.
-func (r Request) Overrides() bool {
-	return len(r.CMakeDefines) > 0 || len(r.ExtraConfigureArgs) > 0 ||
-		len(r.ExtraBuildArgs) > 0 || r.CC != "" || r.CXX != "" ||
-		r.Generator != "" || r.BuildType != "" || r.ParallelJobs != 0
-}
-
-// applyOverrides layers a request's build-argument overrides on a config.
-func applyOverrides(cfg config.Config, req Request) config.Config {
-	if len(req.CMakeDefines) > 0 {
-		merged := map[string]string{}
-		for k, v := range cfg.Build.CMakeDefines {
-			merged[k] = v
-		}
-		for k, v := range req.CMakeDefines {
-			merged[k] = v
-		}
-		cfg.Build.CMakeDefines = merged
-	}
-	cfg.Build.ExtraConfigureArgs = append(append([]string(nil), cfg.Build.ExtraConfigureArgs...), req.ExtraConfigureArgs...)
-	cfg.Build.ExtraBuildArgs = append(append([]string(nil), cfg.Build.ExtraBuildArgs...), req.ExtraBuildArgs...)
-	if req.Generator != "" {
-		cfg.Build.Generator = req.Generator
-	}
-	if req.BuildType != "" {
-		cfg.Build.BuildType = req.BuildType
-	}
-	if req.ParallelJobs != 0 {
-		cfg.Build.ParallelJobs = req.ParallelJobs
-	}
-	if req.CC != "" {
-		cfg.Build.CC = req.CC
-	}
-	if req.CXX != "" {
-		cfg.Build.CXX = req.CXX
-	}
-	return cfg
 }
 
 const maxTailLines = 400
@@ -313,9 +269,13 @@ func (e *Engine) Submit(req Request) (*Job, error) {
 		return nil, fmt.Errorf("source %q not found", req.Source)
 	}
 	set := req.BackendSet()
-	cfg := applyOverrides(e.cfg(), req)
-	if missing := Preflight(cfg, set, e.look); len(missing) > 0 {
-		return nil, fmt.Errorf("missing build dependencies: %s", strings.Join(missing, "; "))
+	cfg := e.cfg()
+	// A custom command may not use the standard toolchain at all, so the
+	// preflight check does not apply.
+	if req.Command == "" {
+		if missing := Preflight(cfg, set, e.look); len(missing) > 0 {
+			return nil, fmt.Errorf("missing build dependencies: %s", strings.Join(missing, "; "))
+		}
 	}
 
 	j := &Job{
@@ -400,7 +360,7 @@ func (e *Engine) run(ctx context.Context, cancel context.CancelFunc, j *Job, req
 	buildDir := filepath.Join(e.paths.Cache, "builds", req.Source, commit, j.Backend)
 	installDir := filepath.Join(e.paths.Runtimes, req.Source, commit, j.Backend)
 
-	cfg := applyOverrides(e.cfg(), req)
+	cfg := e.cfg()
 	plan, err := BuildPlan(cfg, req.BackendSet(), req.Source, commit, srcDir, buildDir, installDir)
 	if err != nil {
 		fail(err.Error(), -1)
@@ -409,7 +369,7 @@ func (e *Engine) run(ctx context.Context, cancel context.CancelFunc, j *Job, req
 	// CMake must find nvcc even when the daemon's PATH was inherited
 	// before the login environment (e.g. a systemd user service started
 	// at boot). Pass the resolved absolute path explicitly.
-	if containsBackend(req.BackendSet(), "cuda") && cfg.Toolchain.NVCC == "" {
+	if req.Command == "" && containsBackend(req.BackendSet(), "cuda") && cfg.Toolchain.NVCC == "" {
 		if _, ok := plan.Defines["CMAKE_CUDA_COMPILER"]; !ok {
 			if nvcc, err := e.look.LookPath("nvcc"); err == nil {
 				plan.Configure = append(plan.Configure, "-DCMAKE_CUDA_COMPILER="+nvcc)
@@ -431,27 +391,49 @@ func (e *Engine) run(ctx context.Context, cancel context.CancelFunc, j *Job, req
 	cmake := orDefault(cfg.Toolchain.CMake, "cmake")
 	env := plan.Env()
 
-	steps := []struct {
-		name string
-		args []string
-	}{
-		{"configure", plan.Configure},
-		{"build", plan.Build},
-	}
-	for _, step := range steps {
-		logger("== " + step.name + ": cmake " + strings.Join(step.args, " ") + " ==")
-		code, err := e.runner.Run(ctx, buildDir, env, cmake, step.args, logger)
+	if req.Command != "" {
+		logger("== command: " + req.Command + " ==")
+		env = append(env,
+			"SOURCE_DIR="+srcDir,
+			"BUILD_DIR="+buildDir,
+			"INSTALL_DIR="+installDir,
+		)
+		code, err := e.runner.Run(ctx, buildDir, env, "sh", []string{"-c", req.Command}, logger)
 		if err != nil {
 			if ctx.Err() != nil {
 				e.cancelJob(j.ID)
 				return
 			}
-			fail(step.name+": "+err.Error(), code)
+			fail("command: "+err.Error(), code)
 			return
 		}
 		if code != 0 {
-			fail(fmt.Sprintf("%s failed with exit code %d", step.name, code), code)
+			fail(fmt.Sprintf("command failed with exit code %d", code), code)
 			return
+		}
+	} else {
+		steps := []struct {
+			name string
+			args []string
+		}{
+			{"configure", plan.Configure},
+			{"build", plan.Build},
+		}
+		for _, step := range steps {
+			logger("== " + step.name + ": cmake " + strings.Join(step.args, " ") + " ==")
+			code, err := e.runner.Run(ctx, buildDir, env, cmake, step.args, logger)
+			if err != nil {
+				if ctx.Err() != nil {
+					e.cancelJob(j.ID)
+					return
+				}
+				fail(step.name+": "+err.Error(), code)
+				return
+			}
+			if code != 0 {
+				fail(fmt.Sprintf("%s failed with exit code %d", step.name, code), code)
+				return
+			}
 		}
 	}
 

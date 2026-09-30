@@ -89,18 +89,11 @@ func (s *Server) handleSourcesBuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Backend            string            `json:"backend"`
-		Backends           []string          `json:"backends"`
-		All                bool              `json:"all"`
-		Commit             string            `json:"commit"`
-		CMakeDefines       map[string]string `json:"cmake_defines"`
-		ExtraConfigureArgs []string          `json:"extra_configure_args"`
-		ExtraBuildArgs     []string          `json:"extra_build_args"`
-		CC                 string            `json:"cc"`
-		CXX                string            `json:"cxx"`
-		Generator          string            `json:"generator"`
-		BuildType          string            `json:"build_type"`
-		ParallelJobs       int               `json:"parallel_jobs"`
+		Backend  string   `json:"backend"`
+		Backends []string `json:"backends"`
+		All      bool     `json:"all"`
+		Commit   string   `json:"commit"`
+		Command  string   `json:"command"`
 	}
 	if err := ReadJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -123,17 +116,10 @@ func (s *Server) handleSourcesBuild(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := build.Request{
-		Source:             r.PathValue("name"),
-		Commit:             body.Commit,
-		Backends:           backends,
-		CMakeDefines:       body.CMakeDefines,
-		ExtraConfigureArgs: body.ExtraConfigureArgs,
-		ExtraBuildArgs:     body.ExtraBuildArgs,
-		CC:                 body.CC,
-		CXX:                body.CXX,
-		Generator:          body.Generator,
-		BuildType:          body.BuildType,
-		ParallelJobs:       body.ParallelJobs,
+		Source:   r.PathValue("name"),
+		Commit:   body.Commit,
+		Backends: backends,
+		Command:  body.Command,
 	}
 	job, err := s.deps.Builds.Submit(req)
 	if err != nil {

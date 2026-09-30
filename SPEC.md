@@ -212,8 +212,11 @@ nvcc  = ""
   （既定の新しい gcc では llama.cpp / nvcc のビルドに失敗することがあるため）。空ならシステム既定を使用
 - CUDA ビルド時は `CMAKE_CUDA_HOST_COMPILER` を設定中の CXX から自動設定
   （nvcc はホストコンパイラを別判定するため、明示しないと新しい gcc で失敗する）
-- ビルド引数はジョブ単位で上書き可能（CMake defines / 追加 configure・build 引数 / CC・CXX /
-  generator / build type / 並列数）
+- ジョブ単位の上書きは **Build command（自由記入の1欄）** のみ。空なら上記の既定コマンド、
+  記入時はその1行を `sh -c` で実行し、configure/build を `&&` で連結できる。cwd は
+  `$BUILD_DIR`、環境に `$SOURCE_DIR` / `$BUILD_DIR` / `$INSTALL_DIR` を渡し、成果物は
+  `$BUILD_DIR/bin` に置く。カスタムコマンド時はツールチェイン事前チェックを省略する
+  （標準ツールを使わないプロジェクトを許容するため）
 - 成果物: `llama-server`（主）, `llama-cli`, 共有ライブラリ, `llama-bench`
 - ジョブ管理: 同時ビルド数制限（既定 1・設定可）、**キャンセルは実行中ジョブを即時停止**（1ジョブで
   全バックエンドをビルドするため、待ち行列の取り残しが起きない）、ログを SSE で UI にストリーム

@@ -29,12 +29,14 @@ func (f fakeLook) LookPath(file string) (string, error) {
 type fakeRunner struct {
 	mu        sync.Mutex
 	calls     [][]string
+	envs      [][]string
 	failMatch string
 }
 
-func (f *fakeRunner) Run(_ context.Context, dir string, _ []string, name string, args []string, log func(string)) (int, error) {
+func (f *fakeRunner) Run(_ context.Context, dir string, env []string, name string, args []string, log func(string)) (int, error) {
 	f.mu.Lock()
 	f.calls = append(f.calls, append([]string{name}, args...))
+	f.envs = append(f.envs, append([]string(nil), env...))
 	f.mu.Unlock()
 	joined := strings.Join(args, " ")
 	if f.failMatch != "" && strings.Contains(joined, f.failMatch) {
@@ -269,20 +271,11 @@ func TestEngineCancelQueuedBuild(t *testing.T) {
 	waitJob(t, e, first.ID)
 }
 
-func TestEngineBuildOverrides(t *testing.T) {
+func TestEngineCustomCommand(t *testing.T) {
 	runner := &fakeRunner{}
 	e, _ := newTestEngine(t, runner, fakeLook{})
-	j, err := e.Submit(Request{
-		Source:             "local",
-		Backends:           []string{"cpu"},
-		CMakeDefines:       map[string]string{"GGML_NATIVE": "OFF", "MY_FLAG": "1"},
-		ExtraConfigureArgs: []string{"--my-configure-arg"},
-		ExtraBuildArgs:     []string{"--my-build-arg"},
-		CC:                 "clang",
-		CXX:                "clang++",
-		BuildType:          "Debug",
-		ParallelJobs:       7,
-	})
+	cmd := `cmake --build "$BUILD_DIR" -j && echo done`
+	j, err := e.Submit(Request{Source: "local", Backends: []string{"cpu"}, Command: cmd})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,27 +283,27 @@ func TestEngineBuildOverrides(t *testing.T) {
 	if done.Status != StatusSucceeded {
 		t.Fatalf("status=%s err=%s", done.Status, done.Error)
 	}
-	if done.Plan == nil {
-		t.Fatal("plan not recorded")
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	if len(runner.calls) != 1 {
+		t.Fatalf("calls = %v", runner.calls)
 	}
-	if done.Plan.CC != "clang" || done.Plan.CXX != "clang++" {
-		t.Errorf("compiler override ignored: %q/%q", done.Plan.CC, done.Plan.CXX)
+	if call := runner.calls[0]; call[0] != "sh" || strings.Join(call[1:], " ") != "-c "+cmd {
+		t.Errorf("call = %v", call)
 	}
-	if done.Plan.Defines["GGML_NATIVE"] != "OFF" || done.Plan.Defines["MY_FLAG"] != "1" {
-		t.Errorf("cmake overrides ignored: %v", done.Plan.Defines)
+	env := strings.Join(runner.envs[0], "\n")
+	for _, want := range []string{"SOURCE_DIR=", "BUILD_DIR=", "INSTALL_DIR="} {
+		if !strings.Contains(env, want) {
+			t.Errorf("env missing %s: %v", want, runner.envs[0])
+		}
 	}
-	cfgJoined := strings.Join(done.Plan.Configure, " ")
-	if !strings.Contains(cfgJoined, "--my-configure-arg") {
-		t.Errorf("extra configure arg missing: %v", done.Plan.Configure)
-	}
-	if !strings.Contains(strings.Join(done.Plan.Build, " "), "--my-build-arg") {
-		t.Errorf("extra build arg missing: %v", done.Plan.Build)
-	}
-	if done.Plan.Parallelism != 7 {
-		t.Errorf("parallelism = %d", done.Plan.Parallelism)
-	}
-	if !strings.Contains(cfgJoined, "-DCMAKE_BUILD_TYPE=Debug") {
-		t.Errorf("build type override missing: %v", done.Plan.Configure)
+}
+
+func TestEngineCustomCommandSkipsPreflight(t *testing.T) {
+	// nvcc is "missing", but a custom command bypasses the preflight.
+	e, _ := newTestEngine(t, &fakeRunner{}, fakeLook{missing: map[string]bool{"nvcc": true}})
+	if _, err := e.Submit(Request{Source: "local", Backends: []string{"cuda"}, Command: "make"}); err != nil {
+		t.Fatalf("custom command should not run preflight: %v", err)
 	}
 }
 

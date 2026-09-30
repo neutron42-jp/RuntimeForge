@@ -1045,60 +1045,22 @@ function SourcesTab(props: {
   const [openJob, setOpenJob] = useState<string | null>(null)
   const [buildFor, setBuildFor] = useState<string | null>(null)
   const [sel, setSel] = useState<Record<string, boolean>>({})
-  const [advOpen, setAdvOpen] = useState(false)
-  const [cmakeText, setCmakeText] = useState('')
-  const [extraCfg, setExtraCfg] = useState('')
-  const [extraBuild, setExtraBuild] = useState('')
-  const [cc, setCc] = useState('')
-  const [cxx, setCxx] = useState('')
-  const [generator, setGenerator] = useState('')
-  const [buildType, setBuildType] = useState('')
-  const [jobs, setJobs] = useState('')
-
-  const buildCfg = (props.config as { build?: Record<string, unknown> } | null)?.build ?? {}
+  const [command, setCommand] = useState('')
 
   const openBuild = (sourceName: string) => {
     const next = buildFor === sourceName ? null : sourceName
     setBuildFor(next)
     if (next) {
       setSel(Object.fromEntries(props.backends.map((b) => [b, true])))
-      // Prefill from the saved configuration so nothing is hidden.
-      setCc(String(buildCfg.cc ?? ''))
-      setCxx(String(buildCfg.cxx ?? ''))
-      setGenerator(String(buildCfg.generator ?? 'Ninja'))
-      setBuildType(String(buildCfg.build_type ?? 'Release'))
-      setJobs(String(buildCfg.parallel_jobs ?? 0))
-      setCmakeText('')
-      setExtraCfg('')
-      setExtraBuild('')
-      setAdvOpen(false)
+      setCommand('')
     }
-  }
-
-  const parseDefines = (text: string): Record<string, string> => {
-    const out: Record<string, string> = {}
-    for (const raw of text.split('\n')) {
-      const line = raw.trim()
-      if (!line || line.startsWith('#')) continue
-      const eq = line.indexOf('=')
-      if (eq < 0) continue
-      out[line.slice(0, eq).trim()] = line.slice(eq + 1).trim()
-    }
-    return out
   }
 
   const startBuild = async (sourceName: string) => {
     const backends = props.backends.filter((b) => sel[b])
     const body = {
       backends,
-      cmake_defines: parseDefines(cmakeText),
-      extra_configure_args: extraCfg.split(/\s+/).filter(Boolean),
-      extra_build_args: extraBuild.split(/\s+/).filter(Boolean),
-      cc: cc || undefined,
-      cxx: cxx || undefined,
-      generator: generator || undefined,
-      build_type: buildType || undefined,
-      parallel_jobs: jobs ? Number(jobs) : undefined,
+      command: command.trim() || undefined,
     }
     try {
       await api.build(sourceName, body)
@@ -1241,68 +1203,24 @@ function SourcesTab(props: {
                       <button onClick={() => setBuildFor(null)}>Cancel</button>
                     </div>
 
-                    <div className="row" style={{ marginTop: 8 }}>
-                      <button onClick={() => setAdvOpen(!advOpen)}>
-                        {advOpen ? 'Hide' : 'Advanced'} build arguments
-                      </button>
-                      <span className="muted" style={{ fontSize: 12 }}>
-                        Overrides apply to this build only; blank keeps the saved settings.
-                      </span>
-                    </div>
-
-                    {advOpen && (
-                      <div className="form-grid" style={{ marginTop: 8 }}>
-                        <div>
-                          <label>CC</label>
-                          <input value={cc} onChange={(e) => setCc(e.target.value)} placeholder="gcc-15" />
-                        </div>
-                        <div>
-                          <label>CXX</label>
-                          <input value={cxx} onChange={(e) => setCxx(e.target.value)} placeholder="g++-15" />
-                        </div>
-                        <div>
-                          <label>Generator</label>
-                          <input value={generator} onChange={(e) => setGenerator(e.target.value)} />
-                        </div>
-                        <div>
-                          <label>Build type</label>
-                          <input value={buildType} onChange={(e) => setBuildType(e.target.value)} />
-                        </div>
-                        <div>
-                          <label>Parallel jobs (0=auto)</label>
-                          <input value={jobs} onChange={(e) => setJobs(e.target.value)} />
-                        </div>
-                        <div style={{ gridColumn: '1 / -1' }}>
-                          <label>CMake defines (one KEY=VALUE per line)</label>
-                          <textarea
-                            className="mono"
-                            style={{ width: '100%', minHeight: 70 }}
-                            value={cmakeText}
-                            onChange={(e) => setCmakeText(e.target.value)}
-                            placeholder={'CMAKE_CUDA_ARCHITECTURES=120\nGGML_CUDA_FA_ALL_QUANTS=ON'}
-                            spellCheck={false}
-                          />
-                        </div>
-                        <div style={{ gridColumn: '1 / -1' }}>
-                          <label>Extra configure args</label>
-                          <input
-                            style={{ width: '100%' }}
-                            value={extraCfg}
-                            onChange={(e) => setExtraCfg(e.target.value)}
-                            placeholder="-DLLAMA_CURL=OFF"
-                          />
-                        </div>
-                        <div style={{ gridColumn: '1 / -1' }}>
-                          <label>Extra build args</label>
-                          <input
-                            style={{ width: '100%' }}
-                            value={extraBuild}
-                            onChange={(e) => setExtraBuild(e.target.value)}
-                            placeholder="--verbose"
-                          />
-                        </div>
+                    <div style={{ marginTop: 8 }}>
+                      <label>Build command (optional — leave blank for the default CMake plan)</label>
+                      <textarea
+                        className="mono"
+                        style={{ width: '100%', minHeight: 60 }}
+                        value={command}
+                        onChange={(e) => setCommand(e.target.value)}
+                        placeholder={'cmake -S "$SOURCE_DIR" -B "$BUILD_DIR" -DGGML_CUDA=ON && cmake --build "$BUILD_DIR" -j'}
+                        spellCheck={false}
+                      />
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        Run with <span className="mono">sh -c</span> in <span className="mono">$BUILD_DIR</span>,
+                        with <span className="mono">$SOURCE_DIR</span> / <span className="mono">$BUILD_DIR</span> /{' '}
+                        <span className="mono">$INSTALL_DIR</span> set. Chain configure and build with{' '}
+                        <span className="mono">&amp;&amp;</span>; binaries must end up in{' '}
+                        <span className="mono">$BUILD_DIR/bin</span>.
                       </div>
-                    )}
+                    </div>
                     <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
                       Selected backends are compiled <strong>together in one CMake build</strong> into a single
                       runtime (llama.cpp picks the device at runtime). Cancel stops it immediately.
