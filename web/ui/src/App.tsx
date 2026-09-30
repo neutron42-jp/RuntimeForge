@@ -1047,12 +1047,12 @@ function SourcesTab(props: {
   const [sel, setSel] = useState<Record<string, boolean>>({})
   const [command, setCommand] = useState('')
 
-  const openBuild = (sourceName: string) => {
-    const next = buildFor === sourceName ? null : sourceName
+  const openBuild = (source: Source) => {
+    const next = buildFor === source.name ? null : source.name
     setBuildFor(next)
     if (next) {
       setSel(Object.fromEntries(props.backends.map((b) => [b, true])))
-      setCommand('')
+      setCommand(source.build_command ?? '')
     }
   }
 
@@ -1156,7 +1156,7 @@ function SourcesTab(props: {
                     </button>
                     <button
                       className="primary"
-                      onClick={() => openBuild(s.name)}
+                      onClick={() => openBuild(s)}
                     >
                       Build…
                     </button>

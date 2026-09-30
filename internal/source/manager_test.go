@@ -65,6 +65,26 @@ func newManager(t *testing.T) (*Manager, string) {
 	return m, base
 }
 
+func TestSetBuildCommand(t *testing.T) {
+	m, base := newManager(t)
+	if err := m.Add(Source{Name: "s", URL: "https://example.com/s.git"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetBuildCommand("s", "cmake -S . && cmake --build ."); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetBuildCommand("ghost", "make"); err == nil {
+		t.Error("expected an error for a missing source")
+	}
+	reloaded, err := NewManager(filepath.Join(base, "sources"), filepath.Join(base, "state", "sources.json"), ExecGit{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := reloaded.Get("s"); s.BuildCommand != "cmake -S . && cmake --build ." {
+		t.Errorf("build command = %q", s.BuildCommand)
+	}
+}
+
 func TestEnsureDefault(t *testing.T) {
 	m, _ := newManager(t)
 	if err := m.EnsureDefault(); err != nil {

@@ -7,6 +7,7 @@ export interface Source {
   update_available: boolean
   last_checked_at?: string
   last_error?: string
+  build_command?: string
 }
 
 export interface Manifest {

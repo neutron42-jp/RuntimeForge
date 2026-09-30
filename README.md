@@ -44,6 +44,7 @@ chosen per model automatically — no manual runtime switching.
   `cmake -S "$SOURCE_DIR" -B "$BUILD_DIR" && cmake --build "$BUILD_DIR" -j`) instead of the
   generated CMake plan, for projects whose layout differs. It runs in `$BUILD_DIR` with
   `$SOURCE_DIR` / `$BUILD_DIR` / `$INSTALL_DIR` set; binaries must land in `$BUILD_DIR/bin`.
+  The command is remembered per source and prefilled next time.
 - **Fully overridable configuration** — built-in defaults, `config.toml`, `config.d/*.toml`,
   and per-source / per-backend / per-model / per-request overrides (including build arguments).
 - **Toolchain controls** — detect tools beyond `PATH` (well-known CUDA locations), re-run

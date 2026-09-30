@@ -29,6 +29,9 @@ type Source struct {
 	UpdateAvailable bool       `json:"update_available"`
 	LastCheckedAt   *time.Time `json:"last_checked_at,omitempty"`
 	LastError       string     `json:"last_error,omitempty"`
+	// BuildCommand is an optional per-source shell line used instead of
+	// the generated CMake plan.
+	BuildCommand string `json:"build_command,omitempty"`
 }
 
 // Manager owns the source registry and the source checkouts on disk.
@@ -131,6 +134,19 @@ func (m *Manager) Get(name string) (Source, bool) {
 		return Source{}, false
 	}
 	return *s, true
+}
+
+// SetBuildCommand stores the per-source custom build command (an empty
+// string clears it).
+func (m *Manager) SetBuildCommand(name, command string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.sources[name]
+	if !ok {
+		return fmt.Errorf("source %q not found", name)
+	}
+	s.BuildCommand = command
+	return m.save()
 }
 
 // Add registers a new source. It does not touch the network.
@@ -357,9 +373,10 @@ func (m *Manager) ensureSubmodules(ctx context.Context, dir string) error {
 }
 
 // ensureDisposableSubmodule manages a submodule directory that the tree
-// does not track. When a pinned commit is known it is checked out
-// (self-healing a stale checkout); otherwise the default branch is
-// shallow-cloned.
+// does not track. When a pinned commit is known the directory is reset
+// to it before each build: the project applies its patches in place at
+// configure time, so a partially patched tree must not persist. Without
+// a pinned commit the default branch is shallow-cloned once.
 func (m *Manager) ensureDisposableSubmodule(ctx context.Context, url, target, sha string) error {
 	if sha == "" {
 		if !dirEmpty(target) {
@@ -378,12 +395,13 @@ func (m *Manager) ensureDisposableSubmodule(ctx context.Context, url, target, sh
 		if _, err := m.git.Run(ctx, "", "clone", "--no-checkout", "--filter=blob:none", "--", url, target); err != nil {
 			return err
 		}
-	} else if head, err := m.git.Run(ctx, target, "rev-parse", "HEAD"); err == nil && strings.TrimSpace(string(head)) == sha {
-		return nil
 	}
 	if _, err := m.git.Run(ctx, target, "fetch", "--depth", "1", "origin", sha); err != nil {
 		return err
 	}
+	// Discard any in-place patch application (and its leftovers) so the
+	// build starts from the pristine pinned tree.
+	_, _ = m.git.Run(ctx, target, "clean", "-ffd")
 	_, err := m.git.Run(ctx, target, "-c", "advice.detachedHead=false", "checkout", "--force", sha)
 	return err
 }

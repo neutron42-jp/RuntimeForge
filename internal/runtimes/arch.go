@@ -5,6 +5,7 @@ package runtimes
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,14 +25,7 @@ var quoted = regexp.MustCompile(`"([^"]*)"`)
 // tree and returns the architecture names it supports. The result is
 // sorted and de-duplicated; the "(unknown)" sentinel is dropped.
 func ExtractArchitectures(srcDir string) ([]string, error) {
-	var path string
-	for _, cand := range llamaArchCandidates {
-		p := filepath.Join(srcDir, cand)
-		if _, err := os.Stat(p); err == nil {
-			path = p
-			break
-		}
-	}
+	path := findArchSource(srcDir)
 	if path == "" {
 		return nil, fmt.Errorf("no llama-arch source found under %s", srcDir)
 	}
@@ -58,6 +52,51 @@ func ExtractArchitectures(srcDir string) ([]string, error) {
 	}
 	sort.Strings(archs)
 	return archs, nil
+}
+
+// findArchSource locates llama-arch.{cpp,h} at the repository root or,
+// for wrapper projects that vendor llama.cpp in a subdirectory, in any
+// nested src/ directory.
+func findArchSource(root string) string {
+	for _, cand := range llamaArchCandidates {
+		if p := filepath.Join(root, cand); fileExists(p) {
+			return p
+		}
+	}
+	var found string
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || found != "" {
+			return nil
+		}
+		if d.IsDir() {
+			if p == root {
+				return nil
+			}
+			switch d.Name() {
+			case ".git", "node_modules", "build", "cmake-build-debug", "cmake-build-release":
+				return fs.SkipDir
+			}
+			if rel, err := filepath.Rel(root, p); err == nil && strings.Count(rel, string(os.PathSeparator)) > 4 {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if filepath.Base(filepath.Dir(p)) != "src" {
+			return nil
+		}
+		switch d.Name() {
+		case "llama-arch.cpp", "llama-arch.h":
+			found = p
+			return fs.SkipAll
+		}
+		return nil
+	})
+	return found
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 // extractMapBlock returns the text of the initializer list following

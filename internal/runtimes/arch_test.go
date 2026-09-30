@@ -54,6 +54,31 @@ func TestExtractArchitecturesMissing(t *testing.T) {
 	}
 }
 
+func TestExtractArchitecturesNested(t *testing.T) {
+	dir := t.TempDir()
+	nested := filepath.Join(dir, "llama.cpp", "src")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "llama-arch.cpp"), []byte(sampleArch), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The vendor's own build directory must be skipped.
+	if err := os.MkdirAll(filepath.Join(dir, "build", "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(dir, "build", "src", "llama-arch.cpp"), []byte(`LLM_ARCH_NAMES = { { 0, "bogus" } };`), 0o644)
+
+	got, err := ExtractArchitectures(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"clip", "gemma4", "kimi-k3", "llama", "qwen3"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
 func TestExtractArchitecturesOnlyUnknown(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "src"), 0o755)

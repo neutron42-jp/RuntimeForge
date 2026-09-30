@@ -121,6 +121,10 @@ func (s *Server) handleSourcesBuild(w http.ResponseWriter, r *http.Request) {
 		Backends: backends,
 		Command:  body.Command,
 	}
+	// Remember the command so the next build form is prefilled.
+	if s.deps.Sources != nil {
+		_ = s.deps.Sources.SetBuildCommand(req.Source, body.Command)
+	}
 	job, err := s.deps.Builds.Submit(req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
