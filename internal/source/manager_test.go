@@ -218,6 +218,36 @@ func TestEnsureCheckoutUsesRegisteredURLAfterChange(t *testing.T) {
 	}
 }
 
+func TestEnsureCheckoutClonesLegacySubmodule(t *testing.T) {
+	ctx := context.Background()
+	sub := initRepo(t) // acts as the declared submodule repository
+
+	wrap := t.TempDir()
+	runExec(t, wrap, "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(wrap, ".gitmodules"),
+		[]byte("[submodule \"llama.cpp\"]\n\tpath = llama.cpp\n\turl = "+sub+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wrap, "README.md"), []byte("wrapper\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runCommit(t, wrap)
+
+	m, _ := newManager(t)
+	if err := m.Add(Source{Name: "wrap", URL: wrap, Ref: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.EnsureClone(ctx, "wrap"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.EnsureCheckout(ctx, "wrap", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(m.LocalPath("wrap"), "llama.cpp", "README.md")); err != nil {
+		t.Errorf("submodule not populated: %v", err)
+	}
+}
+
 func TestResolveRemoteTagAndHash(t *testing.T) {
 	ctx := context.Background()
 	repo := initRepo(t)

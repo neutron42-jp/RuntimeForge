@@ -294,10 +294,67 @@ func (m *Manager) EnsureCheckout(ctx context.Context, name, commit string) (stri
 	if _, err := m.git.Run(ctx, dir, "-c", "advice.detachedHead=false", "checkout", "--force", commit); err != nil {
 		return "", err
 	}
+	if err := m.ensureSubmodules(ctx, dir); err != nil {
+		return "", err
+	}
 	head, err := m.HeadCommit(ctx, name)
 	if err != nil {
 		return "", err
 	}
 	m.update(name, func(s *Source) { s.LocalCommit = head; s.UpdateAvailable = head != s.RemoteCommit })
 	return head, nil
+}
+
+// ensureSubmodules populates declared git submodules that are missing
+// from the working tree. Existing submodules are left untouched so
+// in-place patch application (applied by some projects at configure
+// time) survives rebuilds.
+//
+// Some repositories declare a submodule in .gitmodules without a
+// matching gitlink in the tree (e.g. a disposable upstream checkout that
+// is cloned manually); for those the declared URL is cloned when the
+// path is empty.
+func (m *Manager) ensureSubmodules(ctx context.Context, dir string) error {
+	out, err := m.git.Run(ctx, dir, "config", "-f", filepath.Join(dir, ".gitmodules"),
+		"--get-regexp", `submodule\..*\.path`)
+	if err != nil {
+		// No .gitmodules, or no submodule entries.
+		return nil
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		subPath := fields[1]
+		target := filepath.Join(dir, subPath)
+		if !dirEmpty(target) {
+			continue
+		}
+		// Prefer the tracked gitlink, if any.
+		if _, err := m.git.Run(ctx, dir, "submodule", "update", "--init", "--recursive", "--", subPath); err == nil && !dirEmpty(target) {
+			continue
+		}
+		name := strings.TrimSuffix(strings.TrimPrefix(fields[0], "submodule."), ".path")
+		urlOut, err := m.git.Run(ctx, dir, "config", "-f", filepath.Join(dir, ".gitmodules"), "--get", "submodule."+name+".url")
+		if err != nil {
+			continue
+		}
+		url := strings.TrimSpace(string(urlOut))
+		if url == "" {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		if _, err := m.git.Run(ctx, dir, "clone", "--depth", "1", "--", url, target); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func dirEmpty(path string) bool {
+	entries, err := os.ReadDir(path)
+	return err != nil || len(entries) == 0
 }
