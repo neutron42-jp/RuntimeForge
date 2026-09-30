@@ -248,6 +248,44 @@ func TestEnsureCheckoutClonesLegacySubmodule(t *testing.T) {
 	}
 }
 
+func TestEnsureCheckoutUsesPinnedSubmoduleCommit(t *testing.T) {
+	ctx := context.Background()
+	sub := initRepo(t)
+	pinned := firstCommit(t, sub)
+
+	wrap := t.TempDir()
+	runExec(t, wrap, "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(wrap, ".gitmodules"),
+		[]byte("[submodule \"dep\"]\n\tpath = dep\n\turl = "+sub+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wrap, "README.md"), []byte("wrapper\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runCommit(t, wrap)
+
+	// A side branch records the gitlink for dep; main does not.
+	runExec(t, wrap, "checkout", "-b", "withdep")
+	runExec(t, wrap, "update-index", "--add", "--cacheinfo", "160000,"+pinned+",dep")
+	runExec(t, wrap, "commit", "-m", "pin dep")
+	runExec(t, wrap, "checkout", "main")
+
+	m, _ := newManager(t)
+	if err := m.Add(Source{Name: "wrap", URL: wrap, Ref: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.EnsureClone(ctx, "wrap"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.EnsureCheckout(ctx, "wrap", ""); err != nil {
+		t.Fatal(err)
+	}
+	got := gitHead(t, filepath.Join(m.LocalPath("wrap"), "dep"))
+	if got != pinned {
+		t.Errorf("submodule HEAD = %q, want pinned %q", got, pinned)
+	}
+}
+
 func TestResolveRemoteTagAndHash(t *testing.T) {
 	ctx := context.Background()
 	repo := initRepo(t)

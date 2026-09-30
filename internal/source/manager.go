@@ -312,8 +312,8 @@ func (m *Manager) EnsureCheckout(ctx context.Context, name, commit string) (stri
 //
 // Some repositories declare a submodule in .gitmodules without a
 // matching gitlink in the tree (e.g. a disposable upstream checkout that
-// is cloned manually); for those the declared URL is cloned when the
-// path is empty.
+// is cloned manually). For those, the URL is cloned at the commit some
+// other ref pins for that path, since patches usually target that commit.
 func (m *Manager) ensureSubmodules(ctx context.Context, dir string) error {
 	out, err := m.git.Run(ctx, dir, "config", "-f", filepath.Join(dir, ".gitmodules"),
 		"--get-regexp", `submodule\..*\.path`)
@@ -326,16 +326,21 @@ func (m *Manager) ensureSubmodules(ctx context.Context, dir string) error {
 		if len(fields) != 2 {
 			continue
 		}
+		name := strings.TrimSuffix(strings.TrimPrefix(fields[0], "submodule."), ".path")
 		subPath := fields[1]
 		target := filepath.Join(dir, subPath)
-		if !dirEmpty(target) {
+
+		// A tracked gitlink: git owns the checkout. Only initialize a
+		// missing one; leave existing (possibly patched) trees alone.
+		if m.gitlink(ctx, dir, "HEAD", subPath) != "" {
+			if dirEmpty(target) {
+				if _, err := m.git.Run(ctx, dir, "submodule", "update", "--init", "--recursive", "--", subPath); err != nil {
+					return err
+				}
+			}
 			continue
 		}
-		// Prefer the tracked gitlink, if any.
-		if _, err := m.git.Run(ctx, dir, "submodule", "update", "--init", "--recursive", "--", subPath); err == nil && !dirEmpty(target) {
-			continue
-		}
-		name := strings.TrimSuffix(strings.TrimPrefix(fields[0], "submodule."), ".path")
+
 		urlOut, err := m.git.Run(ctx, dir, "config", "-f", filepath.Join(dir, ".gitmodules"), "--get", "submodule."+name+".url")
 		if err != nil {
 			continue
@@ -344,14 +349,76 @@ func (m *Manager) ensureSubmodules(ctx context.Context, dir string) error {
 		if url == "" {
 			continue
 		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
-		}
-		if _, err := m.git.Run(ctx, dir, "clone", "--depth", "1", "--", url, target); err != nil {
+		if err := m.ensureDisposableSubmodule(ctx, url, target, m.pinnedSubmoduleCommit(ctx, dir, subPath)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// ensureDisposableSubmodule manages a submodule directory that the tree
+// does not track. When a pinned commit is known it is checked out
+// (self-healing a stale checkout); otherwise the default branch is
+// shallow-cloned.
+func (m *Manager) ensureDisposableSubmodule(ctx context.Context, url, target, sha string) error {
+	if sha == "" {
+		if !dirEmpty(target) {
+			return nil
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		_, err := m.git.Run(ctx, "", "clone", "--depth", "1", "--", url, target)
+		return err
+	}
+	if dirEmpty(target) {
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		if _, err := m.git.Run(ctx, "", "clone", "--no-checkout", "--filter=blob:none", "--", url, target); err != nil {
+			return err
+		}
+	} else if head, err := m.git.Run(ctx, target, "rev-parse", "HEAD"); err == nil && strings.TrimSpace(string(head)) == sha {
+		return nil
+	}
+	if _, err := m.git.Run(ctx, target, "fetch", "--depth", "1", "origin", sha); err != nil {
+		return err
+	}
+	_, err := m.git.Run(ctx, target, "-c", "advice.detachedHead=false", "checkout", "--force", sha)
+	return err
+}
+
+// gitlink returns the submodule commit recorded for path at ref, or "".
+func (m *Manager) gitlink(ctx context.Context, dir, ref, path string) string {
+	out, err := m.git.Run(ctx, dir, "ls-tree", ref, "--", path)
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) >= 3 && fields[0] == "160000" {
+		return fields[2]
+	}
+	return ""
+}
+
+// pinnedSubmoduleCommit searches the repository refs for a gitlink at
+// path, which yields the commit the project itself pinned for that
+// dependency (even if the current branch no longer records it).
+func (m *Manager) pinnedSubmoduleCommit(ctx context.Context, dir, path string) string {
+	out, err := m.git.Run(ctx, dir, "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes", "refs/tags")
+	if err != nil {
+		return ""
+	}
+	for _, ref := range strings.Split(string(out), "\n") {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			continue
+		}
+		if sha := m.gitlink(ctx, dir, ref, path); sha != "" {
+			return sha
+		}
+	}
+	return ""
 }
 
 func dirEmpty(path string) bool {
